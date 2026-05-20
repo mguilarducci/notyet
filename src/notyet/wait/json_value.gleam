@@ -2,7 +2,8 @@ import gleam/dict
 import gleam/dynamic/decode
 import gleam/option
 
-/// A fully-decoded, re-serializable representation of any JSON value.
+/// A fully-decoded representation of any JSON value. Re-serializable in
+/// principle (the ADT is lossless); the encoder is added with storage.
 ///
 /// `JObject` wraps a `dict.Dict` because Erlang maps are unordered: a list of
 /// pairs would make equality (and tests) depend on non-deterministic key order.
