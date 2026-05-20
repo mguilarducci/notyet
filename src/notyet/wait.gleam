@@ -1,16 +1,18 @@
 import gleam/dynamic/decode
 import gleam/http.{Post}
 import gleam/json
+import gleam/option.{type Option, None, Some}
 import gleam/time/calendar
 import gleam/time/duration.{type Duration}
 import gleam/time/timestamp.{type Timestamp}
 import notyet/wait/duration as duration_parser
+import notyet/wait/json_value.{type JsonValue}
 import notyet/web.{type Context}
 import wisp.{type Request, type Response}
 import youid/uuid
 
 pub type WaitRequest {
-  WaitRequest(duration: Duration)
+  WaitRequest(duration: Duration, data: Option(JsonValue))
 }
 
 fn duration_decoder() -> decode.Decoder(Duration) {
@@ -23,7 +25,12 @@ fn duration_decoder() -> decode.Decoder(Duration) {
 
 pub fn wait_decoder() -> decode.Decoder(WaitRequest) {
   use parsed <- decode.field("for", duration_decoder())
-  decode.success(WaitRequest(duration: parsed))
+  use data <- decode.optional_field(
+    "data",
+    None,
+    json_value.object_decoder() |> decode.map(Some),
+  )
+  decode.success(WaitRequest(duration: parsed, data: data))
 }
 
 pub fn encode_response(
@@ -48,7 +55,7 @@ pub fn create(req: Request, _ctx: Context) -> Response {
 
   case decode.run(body, wait_decoder()) {
     Error(_) -> wisp.unprocessable_content()
-    Ok(WaitRequest(duration: d)) -> {
+    Ok(WaitRequest(duration: d, data: _)) -> {
       let now = timestamp.system_time()
       let for_time = timestamp.add(now, d)
 
