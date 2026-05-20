@@ -73,3 +73,20 @@ pub fn number_only_rejected_test() {
 pub fn empty_rejected_test() {
   assert parser.parse("") |> result.is_error
 }
+
+// The number token is parsed with `int.parse` (Erlang `binary_to_integer`),
+// which accepts a leading `+` and leading zeros. These are intentionally
+// treated as valid: they still denote a positive integer and the resulting
+// duration is correct. Documented here so the leniency is explicit.
+
+pub fn leading_zero_accepted_test() {
+  assert parser.parse("05 minutes") == Ok(duration.seconds(300))
+}
+
+pub fn leading_zero_singular_accepted_test() {
+  assert parser.parse("01 second") == Ok(duration.seconds(1))
+}
+
+pub fn leading_plus_accepted_test() {
+  assert parser.parse("+5 minutes") == Ok(duration.seconds(300))
+}
