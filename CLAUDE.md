@@ -31,9 +31,12 @@ mist (HTTP) → wisp_mist adapter → router.handle_request(req, ctx)
 - **`src/notyet.gleam`** — entrypoint. Reads `SECRET_KEY_BASE`/`PORT` via `envoy`, builds the `Context`, and wires `router.handle_request` through `wisp_mist` + `mist`. No business logic here.
 - **`src/notyet/router.gleam`** — single dispatch point. Applies `web.middleware`, then matches on `wisp.path_segments(req)` + `req.method`. Pattern: `["wait"], Post -> handler`, `["wait"], _ -> 405`, `_ -> 404`.
 - **`src/notyet/web.gleam`** — shared web concerns: the `Context` type (currently an empty marker, threaded to every handler for future shared state) and `middleware` (method override, request logging, crash rescue, HEAD handling).
-- **`src/notyet/<feature>.gleam`** — one module per feature. `wait.gleam` is the template: it owns its request type (`WaitRequest`), JSON decoder (`wait_decoder` with a `non_empty_string` combinator), response encoder (`encode_response`), and the `create` handler.
+- **`src/notyet/<feature>.gleam`** — one module per feature. `wait.gleam` is the template: it owns its request type (`WaitRequest`), JSON decoder (`wait_decoder`), response encoder (`encode_response`), and the `create` handler. Feature-local helpers live in a submodule (e.g. `src/notyet/wait/duration.gleam`).
+- **`src/notyet/wait/duration.gleam`** — pure parser turning a strict human-readable duration string into a `gleam_time` `Duration`. No wisp/json deps; unit-tested in isolation.
 
-`POST /wait` contract: requires JSON body `{"wait": <non-empty string>}` → `201 {"id": <uuid v4>, "status": "waiting"}`. Invalid/empty body → `422`. Wrong method on `/wait` → `405`.
+`POST /wait` contract: requires JSON body `{"for": <duration string>}` → `201 {"id": <uuid v4>, "status": "waiting", "created_at": <rfc3339 UTC>, "for": <rfc3339 UTC>}` where `created_at` is the moment handled (`now`) and `for` is `now + duration`, both from a single `now` capture. Timestamps end in `Z` (UTC). Invalid/missing/non-duration body → `422`. Wrong method on `/wait` → `405`.
+
+Duration grammar (strict): `"{integer} {unit}"`, exactly one space, no surrounding/double spaces, lowercase unit, integer `> 0`, plural agreement (`1` → singular, else plural). Units (exact only): `second`/`minute`/`hour`/`day`/`week`. `month`/`year` are rejected — `gleam_time` has no exact constructor for them. Note: the integer is parsed via `int.parse`, which accepts a leading `+` and leading zeros (`"+5 minutes"`, `"05 minutes"` are valid).
 
 Handlers re-assert their own preconditions (`wisp.require_method`, `wisp.require_json`) rather than trusting the router, so they remain correct when called directly — which the unit tests do.
 
@@ -41,7 +44,7 @@ Handlers re-assert their own preconditions (`wisp.require_method`, `wisp.require
 
 - **gleeunit** is the runner; tests are public functions suffixed `_test`.
 - **`wisp/simulate`** builds requests in-process (`simulate.request`, `simulate.json_body`, `simulate.read_body`) — no live server needed.
-- Test layout mirrors `src/`. Features get focused unit tests per concern (`test/notyet/wait/decoder_unit_test.gleam`, `encoder_unit_test.gleam`, `handler_test.gleam`) plus a router-level integration test (`test/notyet/router_integration_test.gleam`).
+- Test layout mirrors `src/`. Features get focused unit tests per concern (`test/notyet/wait/duration_unit_test.gleam`, `decoder_unit_test.gleam`, `encoder_unit_test.gleam`, `handler_test.gleam`) plus a router-level integration test (`test/notyet/router_integration_test.gleam`).
 - Development is test-driven: write the failing test, then the implementation.
 
 ## Conventions
