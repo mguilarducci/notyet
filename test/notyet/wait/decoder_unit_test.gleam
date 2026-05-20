@@ -1,6 +1,7 @@
 import gleam/dynamic/decode
 import gleam/json
 import gleam/result
+import gleam/time/duration
 import notyet/wait
 
 fn decode_json(
@@ -12,23 +13,27 @@ fn decode_json(
 }
 
 pub fn valid_payload_decodes_test() {
-  let assert Ok(req) = decode_json("{\"wait\":\"foo\"}")
-  assert req == wait.WaitRequest(wait: "foo")
+  let assert Ok(req) = decode_json("{\"for\":\"5 minutes\"}")
+  assert req == wait.WaitRequest(duration: duration.seconds(300))
 }
 
-pub fn empty_wait_rejected_test() {
-  assert decode_json("{\"wait\":\"\"}") |> result.is_error
+pub fn invalid_duration_rejected_test() {
+  assert decode_json("{\"for\":\"bogus\"}") |> result.is_error
 }
 
-pub fn missing_wait_rejected_test() {
+pub fn empty_for_rejected_test() {
+  assert decode_json("{\"for\":\"\"}") |> result.is_error
+}
+
+pub fn missing_for_rejected_test() {
   assert decode_json("{}") |> result.is_error
 }
 
 pub fn wrong_type_rejected_test() {
-  assert decode_json("{\"wait\":123}") |> result.is_error
+  assert decode_json("{\"for\":123}") |> result.is_error
 }
 
 pub fn extra_field_ignored_test() {
-  let assert Ok(req) = decode_json("{\"wait\":\"foo\",\"extra\":\"x\"}")
-  assert req.wait == "foo"
+  let assert Ok(req) = decode_json("{\"for\":\"5 minutes\",\"extra\":\"x\"}")
+  assert req == wait.WaitRequest(duration: duration.seconds(300))
 }

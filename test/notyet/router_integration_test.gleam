@@ -5,13 +5,23 @@ import notyet/web
 import wisp/simulate
 
 pub fn post_wait_dispatches_to_handler_test() {
-  let body = json.object([#("wait", json.string("foo"))])
+  let body = json.object([#("for", json.string("5 minutes"))])
   let response =
     simulate.request(http.Post, "/wait")
     |> simulate.json_body(body)
     |> router.handle_request(web.Context)
 
   assert response.status == 201
+}
+
+pub fn invalid_duration_returns_422_test() {
+  let body = json.object([#("for", json.string("nope"))])
+  let response =
+    simulate.request(http.Post, "/wait")
+    |> simulate.json_body(body)
+    |> router.handle_request(web.Context)
+
+  assert response.status == 422
 }
 
 pub fn wrong_method_returns_405_test() {
