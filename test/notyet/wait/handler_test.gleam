@@ -60,3 +60,28 @@ pub fn month_unit_returns_422_test() {
   let response = post(json.object([#("for", json.string("5 months"))]))
   assert response.status == 422
 }
+
+pub fn valid_post_with_data_returns_201_test() {
+  let body =
+    json.object([
+      #("for", json.string("5 minutes")),
+      #("data", json.object([#("abc", json.int(1))])),
+    ])
+  let response = post(body)
+  assert response.status == 201
+}
+
+pub fn post_without_data_returns_201_test() {
+  let response = post(json.object([#("for", json.string("5 minutes"))]))
+  assert response.status == 201
+}
+
+pub fn data_not_object_returns_422_test() {
+  let body =
+    json.object([
+      #("for", json.string("5 minutes")),
+      #("data", json.array([1, 2], json.int)),
+    ])
+  let response = post(body)
+  assert response.status == 422
+}
