@@ -1,5 +1,9 @@
 import gleam/dynamic/decode
+import gleam/http.{Post}
 import gleam/json
+import notyet/web.{type Context}
+import wisp.{type Request, type Response}
+import youid/uuid
 
 pub type WaitRequest {
   WaitRequest(wait: String)
@@ -23,4 +27,18 @@ pub fn encode_response(id: String) -> json.Json {
     #("id", json.string(id)),
     #("status", json.string("waiting")),
   ])
+}
+
+pub fn create(req: Request, _ctx: Context) -> Response {
+  use <- wisp.require_method(req, Post)
+  use body <- wisp.require_json(req)
+
+  case decode.run(body, wait_decoder()) {
+    Error(_) -> wisp.unprocessable_content()
+    Ok(_) ->
+      uuid.v4_string()
+      |> encode_response
+      |> json.to_string
+      |> wisp.json_response(201)
+  }
 }
