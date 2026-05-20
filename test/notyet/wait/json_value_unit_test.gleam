@@ -1,6 +1,7 @@
 import gleam/dict
 import gleam/dynamic/decode
 import gleam/json
+import gleam/result
 import notyet/wait/json_value.{
   JArray, JBool, JFloat, JInt, JNull, JObject, JString,
 }
@@ -11,6 +12,14 @@ fn decode_value(
   let assert Ok(dyn) = json.parse(input, decode.dynamic)
     as "test payload must be valid JSON"
   decode.run(dyn, json_value.decoder())
+}
+
+fn decode_object(
+  input: String,
+) -> Result(json_value.JsonValue, List(decode.DecodeError)) {
+  let assert Ok(dyn) = json.parse(input, decode.dynamic)
+    as "test payload must be valid JSON"
+  decode.run(dyn, json_value.object_decoder())
 }
 
 pub fn decodes_string_test() {
@@ -68,4 +77,33 @@ pub fn decodes_nested_object_with_array_test() {
 pub fn decodes_nested_null_test() {
   assert decode_value("{\"a\":null}")
     == Ok(JObject(dict.from_list([#("a", JNull)])))
+}
+
+pub fn object_decoder_accepts_object_test() {
+  assert decode_object("{\"abc\":1}")
+    == Ok(JObject(dict.from_list([#("abc", JInt(1))])))
+}
+
+pub fn object_decoder_accepts_empty_object_test() {
+  assert decode_object("{}") == Ok(JObject(dict.new()))
+}
+
+pub fn object_decoder_rejects_array_test() {
+  assert decode_object("[1,2]") |> result.is_error
+}
+
+pub fn object_decoder_rejects_string_test() {
+  assert decode_object("\"x\"") |> result.is_error
+}
+
+pub fn object_decoder_rejects_number_test() {
+  assert decode_object("5") |> result.is_error
+}
+
+pub fn object_decoder_rejects_bool_test() {
+  assert decode_object("true") |> result.is_error
+}
+
+pub fn object_decoder_rejects_null_test() {
+  assert decode_object("null") |> result.is_error
 }

@@ -29,6 +29,12 @@ pub fn decoder() -> decode.Decoder(JsonValue) {
   ])
 }
 
+/// Decode a JSON value that must be an object. Any non-object input
+/// (array, string, number, bool, null) fails the decoder.
+pub fn object_decoder() -> decode.Decoder(JsonValue) {
+  decode.dict(decode.string, decoder()) |> decode.map(JObject)
+}
+
 /// Succeeds only on JSON `null`, producing `JNull`. `decode.optional` maps a
 /// null value to `None`; anything else is `Some(_)` and fails this branch.
 fn null_decoder() -> decode.Decoder(JsonValue) {
