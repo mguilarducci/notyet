@@ -36,7 +36,7 @@ router → wait.create → wisp.require_json → decode.run(body, wait_decoder)
 
 ```gleam
 pub type JsonValue {
-  JObject(List(#(String, JsonValue)))
+  JObject(dict.Dict(String, JsonValue))
   JArray(List(JsonValue))
   JString(String)
   JInt(Int)
@@ -45,6 +45,11 @@ pub type JsonValue {
   JNull
 }
 ```
+
+`JObject` holds a `dict.Dict` (not a `List` of pairs): Erlang maps don't preserve
+insertion order, so `dict.to_list` is non-deterministic and `List` equality in
+tests would be fragile. `Dict` equality is content-based (order-independent), and
+`gleam_json`'s `json.dict` maps cleanly to it for the future encoder.
 
 ### `json_value.gleam` public surface
 
@@ -58,7 +63,7 @@ pub type JsonValue {
   - `int` before `float`, `bool` before `int` — avoids wrong matches on the Erlang target.
   - object branch: `decode.dict(decode.string, decoder())` mapped to `JObject`.
   - array branch: `decode.list(decoder())` mapped to `JArray`.
-  - null branch: detect JSON `null` (via stdlib `is_null` / `optional` primitive) → `JNull`. Exact primitive nailed during TDD with a failing test first. **Nested null (`{"a": null}`) must decode to `JNull`, never 422.**
+  - null branch: `decode.optional(decode.dynamic)` then map `None → JNull`, `Some(_) → decode.failure`. Succeeds only on actual JSON `null`. **Nested null (`{"a": null}`) decodes to `JNull`, never 422.**
 - `object_decoder()` = `decode.dict(decode.string, decoder())` mapped to `JObject`. A non-object top-level value (array/string/number/bool/null) fails → `wait.create` returns 422.
 
 ### `wait.gleam` changes
