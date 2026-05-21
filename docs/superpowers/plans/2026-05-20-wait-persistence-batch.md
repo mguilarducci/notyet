@@ -1224,8 +1224,10 @@ pub fn no_flush_below_threshold_then_flush_test() {
 
 pub fn multiple_batches_test() {
   use db <- test_helper.with_db
+  // Short interval so the trailing partial batch flushes quickly (keep the
+  // suite fast — do NOT use a multi-second interval here).
   let assert Ok(actor.Started(_, subject)) =
-    batch.start(db, batch.Config(max_size: 2, interval_ms: 60_000))
+    batch.start(db, batch.Config(max_size: 2, interval_ms: 200))
 
   let replies = [
     batch.enqueue_async(subject, rec()),
@@ -1234,9 +1236,9 @@ pub fn multiple_batches_test() {
     batch.enqueue_async(subject, rec()),
     batch.enqueue_async(subject, rec()),
   ]
-  // 5 rows, max_size 2 -> two full flushes (4 rows) immediately; the 5th waits
-  // for the interval. Give all of them room to commit.
-  list.each(replies, fn(r) { assert process.receive(r, 65_000) == Ok(Ok(Nil)) })
+  // 5 rows, max_size 2 -> two full flushes (4 rows) at the size threshold; the
+  // 5th flushes after the 200ms interval. All commit; all waiters get Ok.
+  list.each(replies, fn(r) { assert process.receive(r, 5000) == Ok(Ok(Nil)) })
   assert test_helper.count_waits(db) == 5
 }
 
