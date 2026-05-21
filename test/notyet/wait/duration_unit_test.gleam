@@ -22,6 +22,26 @@ pub fn weeks_plural_test() {
   assert parser.parse("3 weeks") == Ok(duration.seconds(1_814_400))
 }
 
+pub fn seconds_plural_test() {
+  assert parser.parse("5 seconds") == Ok(duration.seconds(5))
+}
+
+pub fn minute_singular_test() {
+  assert parser.parse("1 minute") == Ok(duration.seconds(60))
+}
+
+pub fn hours_plural_test() {
+  assert parser.parse("2 hours") == Ok(duration.seconds(7200))
+}
+
+pub fn day_singular_test() {
+  assert parser.parse("1 day") == Ok(duration.seconds(86_400))
+}
+
+pub fn week_singular_test() {
+  assert parser.parse("1 week") == Ok(duration.seconds(604_800))
+}
+
 pub fn plural_with_singular_unit_rejected_test() {
   assert parser.parse("2 minute") |> result.is_error
 }

@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+#
+# Run the test suite with line-coverage measurement.
+#
+# Prints a per-module + total coverage summary and writes a Cobertura XML
+# report to build/coverage/cobertura.xml (consumable by CI / Codecov).
+#
+#   ./bin/coverage
+#
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+# Compile sources + tests (and fail fast if the suite is red) before measuring.
+gleam test
+
+# Re-run the suite under Erlang's `cover` instrumentation and emit reports.
+escript bin/coverage.escript

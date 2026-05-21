@@ -38,7 +38,11 @@ pub fn object_decoder() -> decode.Decoder(JsonValue) {
 
 /// Succeeds only on JSON `null`, producing `JNull`. `decode.optional` maps a
 /// null value to `None`; anything else is `Some(_)` and fails this branch.
-fn null_decoder() -> decode.Decoder(JsonValue) {
+///
+/// Public so the failure branch can be tested directly: through `decoder/0` it
+/// is the last `one_of` arm and only ever sees `null` (every other JSON value
+/// matches an earlier arm), so a non-null input never reaches it there.
+pub fn null_decoder() -> decode.Decoder(JsonValue) {
   use opt <- decode.then(decode.optional(decode.dynamic))
   case opt {
     option.None -> decode.success(JNull)

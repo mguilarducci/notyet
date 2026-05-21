@@ -107,3 +107,15 @@ pub fn object_decoder_rejects_bool_test() {
 pub fn object_decoder_rejects_null_test() {
   assert decode_object("null") |> result.is_error
 }
+
+pub fn null_decoder_accepts_null_test() {
+  let assert Ok(dyn) = json.parse("null", decode.dynamic)
+    as "test payload must be valid JSON"
+  assert decode.run(dyn, json_value.null_decoder()) == Ok(JNull)
+}
+
+pub fn null_decoder_rejects_nonnull_test() {
+  let assert Ok(dyn) = json.parse("5", decode.dynamic)
+    as "test payload must be valid JSON"
+  assert decode.run(dyn, json_value.null_decoder()) |> result.is_error
+}

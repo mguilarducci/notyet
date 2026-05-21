@@ -9,8 +9,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `gleam build` — compile
 - `gleam format` — format all source; `gleam format --check` to verify in CI
 - `gleam deps download` — fetch dependencies from `manifest.toml`
+- `./bin/coverage` — run the suite under Erlang `cover`, print a per-module + total coverage summary (lines and clauses), and write `build/coverage/cobertura.xml`
 
 gleeunit has no built-in single-test filter; the runner executes all `*_test` functions it discovers. To narrow scope while iterating, temporarily reduce the test module under edit.
+
+### Coverage
+
+`bin/coverage` (bash wrapper) runs `gleam test`, then `bin/coverage.escript` cover-compiles the application beams in `build/dev/erlang/notyet/ebin`, re-runs the suite via EUnit under instrumentation, and reports. Two metrics: **lines** (cover's line analysis) and **clauses** (a statement/branch proxy via `calls`/clause — Erlang `cover` has no true branch coverage). Cobertura XML maps to the generated `.erl` artefacts (not the `.gleam` sources), since coverage is measured on the Erlang backend; the module/total percentages are the reliable signal. All application source is measured — only `*_test` and generated `@@` modules are excluded. Coverage gaps must be closed with tests, not by excluding code; the only acceptable uncovered code is the irreducible side-effecting glue in `main/0` (`mist.start` + `process.sleep_forever`), which cannot run under a unit test. `covertool` is a dev dependency.
 
 ## Environment
 
