@@ -27,6 +27,10 @@ pub opaque type Message {
   // DB-error, or crash), and monitoring an already-dead pid still fires
   // immediately (`noproc`). So a slot can neither leak (-> permanent 429) nor be
   // freed twice. The worker therefore sends nothing itself.
+  // Note: the `gleam_erlang` `process.monitor` doc-comment warns a dead process
+  // "will never be received", but that caveat applies to by-name monitors —
+  // `erlang:monitor(process, Pid)` on a raw Pid (what's used here) does deliver
+  // an immediate `noproc` Down, so spawn-then-monitor is safe.
   WorkerDone
 }
 

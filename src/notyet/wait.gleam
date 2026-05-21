@@ -9,6 +9,7 @@ import notyet/wait/batch
 import notyet/wait/duration as duration_parser
 import notyet/wait/json_value.{type JsonValue}
 import notyet/wait/record
+import notyet/wait/status
 import notyet/web.{type Context}
 import wisp.{type Request, type Response}
 import youid/uuid.{type Uuid}
@@ -86,7 +87,7 @@ pub fn create(req: Request, ctx: Context) -> Response {
             )
           case batch.enqueue(ctx.batch, row, ctx.enqueue_timeout_ms) {
             Ok(_) ->
-              json.object([#("status", json.string("accepted"))])
+              json.object([#("status", json.string(status.to_string(status.Accepted)))])
               |> json.to_string
               |> wisp.json_response(202)
             // Shed: real client demand exceeded admission. 429 + Retry-After
