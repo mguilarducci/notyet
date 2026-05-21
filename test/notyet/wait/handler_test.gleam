@@ -65,7 +65,7 @@ pub fn create_bad_for_422_test() {
   assert response.status == 422
 }
 
-pub fn response_contains_activity_and_received_status_test() {
+pub fn response_contains_activity_and_accepted_status_test() {
   use db <- test_helper.with_db
   let response =
     test_helper.keyed_request(
