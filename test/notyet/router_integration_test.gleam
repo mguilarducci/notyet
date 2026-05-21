@@ -43,6 +43,7 @@ pub fn post_wait_happy_path_test() {
       "{\"for\":\"5 minutes\",\"activity\":\"" <> v4 <> "\"}",
     )
     |> request.set_header("content-type", "application/json")
+    |> request.set_header("idempotency-key", "router-k1")
     |> router.handle_request(ctx)
   assert response.status == 201
   let assert Ok(status) =

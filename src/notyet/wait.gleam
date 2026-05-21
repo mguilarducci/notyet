@@ -1,5 +1,6 @@
 import gleam/dynamic/decode
 import gleam/http.{Post}
+import gleam/http/request
 import gleam/json
 import gleam/option.{type Option, None, Some}
 import gleam/time/calendar
@@ -61,45 +62,53 @@ pub fn wait_decoder() -> decode.Decoder(WaitRequest) {
   ))
 }
 
-pub fn encode_response(r: record.WaitRecord) -> json.Json {
+pub fn encode_response(p: record.PersistedWait) -> json.Json {
   json.object([
-    #("id", json.string(uuid.to_string(r.id))),
-    #("activity", json.string(uuid.to_string(r.activity))),
-    #("status", json.string(status.to_string(status.Received))),
+    #("id", json.string(uuid.to_string(p.id))),
+    #("activity", json.string(uuid.to_string(p.activity))),
+    #("status", json.string(status.to_string(p.status))),
     #(
       "created_at",
-      json.string(timestamp.to_rfc3339(r.created_at, calendar.utc_offset)),
+      json.string(timestamp.to_rfc3339(p.created_at, calendar.utc_offset)),
     ),
     #(
       "for",
-      json.string(timestamp.to_rfc3339(r.wait_until, calendar.utc_offset)),
+      json.string(timestamp.to_rfc3339(p.wait_until, calendar.utc_offset)),
     ),
   ])
 }
 
 pub fn create(req: Request, ctx: Context) -> Response {
   use <- wisp.require_method(req, Post)
-  use body <- wisp.require_json(req)
 
-  case decode.run(body, wait_decoder()) {
+  case request.get_header(req, "idempotency-key") {
     Error(_) -> wisp.unprocessable_content()
-    Ok(wr) -> {
-      let now = timestamp.system_time()
-      let for_time = timestamp.add(now, wr.duration)
-      let row =
-        record.WaitRecord(
-          id: uuid.v4(),
-          activity: wr.activity,
-          data: wr.data,
-          for_duration: wr.raw_for,
-          wait_until: for_time,
-          created_at: now,
-        )
-
-      case batch.enqueue(ctx.batch, row, ctx.ack_timeout_ms) {
-        Ok(_) ->
-          row |> encode_response |> json.to_string |> wisp.json_response(201)
-        Error(_) -> wisp.internal_server_error()
+    Ok("") -> wisp.unprocessable_content()
+    Ok(key) -> {
+      use body <- wisp.require_json(req)
+      case decode.run(body, wait_decoder()) {
+        Error(_) -> wisp.unprocessable_content()
+        Ok(wr) -> {
+          let now = timestamp.system_time()
+          let row =
+            record.WaitRecord(
+              id: uuid.v4(),
+              activity: wr.activity,
+              idempotency_key: key,
+              data: wr.data,
+              for_duration: wr.raw_for,
+              wait_until: timestamp.add(now, wr.duration),
+              created_at: now,
+            )
+          case batch.enqueue(ctx.batch, row, ctx.ack_timeout_ms) {
+            Ok(persisted) ->
+              persisted
+              |> encode_response
+              |> json.to_string
+              |> wisp.json_response(201)
+            Error(_) -> wisp.internal_server_error()
+          }
+        }
       }
     }
   }

@@ -14,6 +14,7 @@ fn rec() -> record.WaitRecord {
   record.WaitRecord(
     id: uuid.v4(),
     activity: uuid.v4(),
+    idempotency_key: uuid.v4_string(),
     data: None,
     for_duration: "5 minutes",
     wait_until: timestamp.system_time(),
@@ -25,6 +26,10 @@ fn rec_with_id(id: uuid.Uuid) -> record.WaitRecord {
   record.WaitRecord(..rec(), id: id)
 }
 
+fn rec_with_key(key: String) -> record.WaitRecord {
+  record.WaitRecord(..rec(), idempotency_key: key)
+}
+
 pub fn flush_by_size_test() {
   use db <- test_helper.with_db
   let assert Ok(actor.Started(_, subject)) =
@@ -34,9 +39,9 @@ pub fn flush_by_size_test() {
   let r2 = batch.enqueue_async(subject, rec())
   let r3 = batch.enqueue_async(subject, rec())
 
-  assert process.receive(r1, 5000) == Ok(Ok(Nil))
-  assert process.receive(r2, 5000) == Ok(Ok(Nil))
-  assert process.receive(r3, 5000) == Ok(Ok(Nil))
+  let assert Ok(Ok(_)) = process.receive(r1, 5000)
+  let assert Ok(Ok(_)) = process.receive(r2, 5000)
+  let assert Ok(Ok(_)) = process.receive(r3, 5000)
   assert test_helper.count_waits(db) == 3
 }
 
@@ -46,7 +51,7 @@ pub fn flush_by_interval_test() {
     batch.start(db, batch.Config(max_size: 100, interval_ms: 150))
 
   let r = batch.enqueue_async(subject, rec())
-  assert process.receive(r, 5000) == Ok(Ok(Nil))
+  let assert Ok(Ok(_)) = process.receive(r, 5000)
   assert test_helper.count_waits(db) == 1
 }
 
@@ -60,9 +65,9 @@ pub fn no_flush_below_threshold_then_flush_test() {
   assert process.receive(r1, 300) == Error(Nil)
 
   let r3 = batch.enqueue_async(subject, rec())
-  assert process.receive(r3, 5000) == Ok(Ok(Nil))
-  assert process.receive(r1, 5000) == Ok(Ok(Nil))
-  assert process.receive(r2, 5000) == Ok(Ok(Nil))
+  let assert Ok(Ok(_)) = process.receive(r3, 5000)
+  let assert Ok(Ok(_)) = process.receive(r1, 5000)
+  let assert Ok(Ok(_)) = process.receive(r2, 5000)
   assert test_helper.count_waits(db) == 3
 }
 
@@ -78,7 +83,9 @@ pub fn multiple_batches_test() {
     batch.enqueue_async(subject, rec()),
     batch.enqueue_async(subject, rec()),
   ]
-  list.each(replies, fn(r) { assert process.receive(r, 5000) == Ok(Ok(Nil)) })
+  list.each(replies, fn(r) {
+    let assert Ok(Ok(_)) = process.receive(r, 5000)
+  })
   assert test_helper.count_waits(db) == 5
 }
 
@@ -88,10 +95,18 @@ pub fn flush_error_propagates_test() {
     batch.start(db, batch.Config(max_size: 1, interval_ms: 60_000))
 
   let id = uuid.v4()
-  let r1 = batch.enqueue_async(subject, rec_with_id(id))
-  assert process.receive(r1, 5000) == Ok(Ok(Nil))
+  let r1 =
+    batch.enqueue_async(
+      subject,
+      record.WaitRecord(..rec_with_id(id), idempotency_key: "ek-1"),
+    )
+  let assert Ok(Ok(_)) = process.receive(r1, 5000)
 
-  let r2 = batch.enqueue_async(subject, rec_with_id(id))
+  let r2 =
+    batch.enqueue_async(
+      subject,
+      record.WaitRecord(..rec_with_id(id), idempotency_key: "ek-2"),
+    )
   assert process.receive(r2, 5000) == Ok(Error(Nil))
   assert test_helper.count_waits(db) == 1
 }
@@ -107,6 +122,19 @@ pub fn data_persisted_as_jsonb_test() {
       data: Some(JObject(dict.from_list([#("k", JInt(1))]))),
     )
   let reply = batch.enqueue_async(subject, r)
-  assert process.receive(reply, 5000) == Ok(Ok(Nil))
+  let assert Ok(Ok(_)) = process.receive(reply, 5000)
+  assert test_helper.count_waits(db) == 1
+}
+
+pub fn same_key_in_one_batch_dedups_test() {
+  use db <- test_helper.with_db
+  let assert Ok(actor.Started(_, subject)) =
+    batch.start(db, batch.Config(max_size: 2, interval_ms: 60_000))
+  let key = "dup-key"
+  let r1 = batch.enqueue_async(subject, rec_with_key(key))
+  let r2 = batch.enqueue_async(subject, rec_with_key(key))
+  let assert Ok(Ok(p1)) = process.receive(r1, 5000)
+  let assert Ok(Ok(p2)) = process.receive(r2, 5000)
+  assert p1.id == p2.id
   assert test_helper.count_waits(db) == 1
 }

@@ -1,9 +1,9 @@
 import gleam/json
-import gleam/option.{None}
 import gleam/string
 import gleam/time/timestamp
 import notyet/wait
 import notyet/wait/record
+import notyet/wait/status
 import youid/uuid
 
 const id_string = "f47ac10b-58cc-4372-a567-0e02b2c3d479"
@@ -16,13 +16,12 @@ pub fn encode_response_shape_test() {
   let created_at = timestamp.from_unix_seconds(1000)
   let for_time = timestamp.from_unix_seconds(1300)
   let row =
-    record.WaitRecord(
+    record.PersistedWait(
       id: id,
       activity: activity,
-      data: None,
-      for_duration: "5 minutes",
-      wait_until: for_time,
+      status: status.Received,
       created_at: created_at,
+      wait_until: for_time,
     )
   let output =
     wait.encode_response(row)

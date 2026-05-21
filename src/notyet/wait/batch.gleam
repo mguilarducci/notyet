@@ -1,20 +1,24 @@
+import gleam/dict
 import gleam/erlang/process.{type Subject, type Timer}
 import gleam/json
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 import gleam/otp/supervision
+import gleam/set
 import gleam/time/calendar
 import gleam/time/timestamp
 import notyet/wait/json_value
-import notyet/wait/record.{type WaitRecord}
+import notyet/wait/record.{type PersistedWait, type WaitRecord}
 import notyet/wait/sql
+import notyet/wait/status
 import pog
 import youid/uuid
 
-/// Reply sent to a waiter once its batch commits (Ok) or fails (Error).
+/// Reply sent to a waiter once its batch commits: the canonical persisted row
+/// (Ok) or failure (Error). On a dedup hit the row is the original.
 pub type Ack =
-  Result(Nil, Nil)
+  Result(PersistedWait, Nil)
 
 pub opaque type Message {
   Enqueue(record: WaitRecord, reply: Subject(Ack))
@@ -38,7 +42,6 @@ type State {
   )
 }
 
-/// Start an unnamed writer (used by tests). Returns the subject to send to.
 pub fn start(
   db: pog.Connection,
   config: Config,
@@ -46,8 +49,6 @@ pub fn start(
   builder(db, config) |> actor.start
 }
 
-/// A supervised, named writer (used by the app). The parent recovers the
-/// subject via `process.named_subject(name)`.
 pub fn supervised(
   name: process.Name(Message),
   db: pog.Connection,
@@ -76,7 +77,6 @@ fn builder(
   |> actor.on_message(handle)
 }
 
-/// Enqueue without blocking; returns the reply subject to await later.
 pub fn enqueue_async(
   subject: Subject(Message),
   record: WaitRecord,
@@ -86,8 +86,6 @@ pub fn enqueue_async(
   reply
 }
 
-/// Enqueue and block until the batch commits or `timeout_ms` elapses.
-/// Commit -> Ok(Nil); flush failure or timeout -> Error(Nil).
 pub fn enqueue(
   subject: Subject(Message),
   record: WaitRecord,
@@ -134,15 +132,59 @@ fn flush(state: State) -> actor.Next(State, Message) {
   case state.pending {
     [] -> actor.continue(State(..state, timer: None))
     pending -> {
-      let records = list.reverse(pending)
-      let ack = case do_insert(state.db, list.map(records, fn(p) { p.0 })) {
-        Ok(_) -> Ok(Nil)
-        Error(_) -> Error(Nil)
+      let waiters = list.reverse(pending)
+      let distinct = dedup_by_key(list.map(waiters, fn(p) { p.0 }))
+      case do_insert(state.db, distinct) {
+        Ok(pog.Returned(_, rows)) -> {
+          let by_key = rows_by_key(rows)
+          list.each(waiters, fn(p) {
+            case dict.get(by_key, { p.0 }.idempotency_key) {
+              Ok(persisted) -> process.send(p.1, Ok(persisted))
+              Error(Nil) -> process.send(p.1, Error(Nil))
+            }
+          })
+        }
+        Error(_) -> list.each(waiters, fn(p) { process.send(p.1, Error(Nil)) })
       }
-      list.each(records, fn(p) { process.send(p.1, ack) })
       actor.continue(State(..state, pending: [], timer: None))
     }
   }
+}
+
+/// Keep the first record per idempotency_key (Postgres rejects ON CONFLICT
+/// touching the same row twice within one statement).
+fn dedup_by_key(records: List(WaitRecord)) -> List(WaitRecord) {
+  let #(kept, _) =
+    list.fold(records, #([], set.new()), fn(acc, r) {
+      let #(kept, seen) = acc
+      case set.contains(seen, r.idempotency_key) {
+        True -> acc
+        False -> #([r, ..kept], set.insert(seen, r.idempotency_key))
+      }
+    })
+  list.reverse(kept)
+}
+
+fn rows_by_key(
+  rows: List(sql.InsertWaitsRow),
+) -> dict.Dict(String, PersistedWait) {
+  list.fold(rows, dict.new(), fn(acc, row) {
+    case status.from_string(row.status) {
+      Ok(s) ->
+        dict.insert(
+          acc,
+          row.idempotency_key,
+          record.PersistedWait(
+            id: row.id,
+            activity: row.activity,
+            status: s,
+            created_at: row.created_at,
+            wait_until: row.wait_until,
+          ),
+        )
+      Error(Nil) -> acc
+    }
+  })
 }
 
 fn cancel_timer(timer: Option(Timer)) -> Nil {
@@ -161,11 +203,12 @@ fn do_insert(
 ) -> Result(pog.Returned(sql.InsertWaitsRow), pog.QueryError) {
   let ids = list.map(records, fn(r) { uuid.to_string(r.id) })
   let activities = list.map(records, fn(r) { uuid.to_string(r.activity) })
+  let keys = list.map(records, fn(r) { r.idempotency_key })
   let datas = list.map(records, fn(r) { data_string(r.data) })
   let fors = list.map(records, fn(r) { r.for_duration })
   let untils = list.map(records, fn(r) { rfc3339(r.wait_until) })
   let createds = list.map(records, fn(r) { rfc3339(r.created_at) })
-  sql.insert_waits(db, ids, activities, datas, fors, untils, createds)
+  sql.insert_waits(db, ids, activities, keys, datas, fors, untils, createds)
 }
 
 fn data_string(data: Option(json_value.JsonValue)) -> String {
