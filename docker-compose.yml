@@ -9,12 +9,42 @@ services:
     ports:
       - "${POSTGRES_HOST_PORT}:5432"
     volumes:
-      - notyet_pg_data:/var/lib/postgresql/data
+      - notyet_pg_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 10
+
+  migrate:
+    build:
+      context: .
+      target: build
+    container_name: notyet-migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    command: ["gleam", "run", "-m", "cigogne", "all"]
+
+  app:
+    build:
+      context: .
+      target: runtime
+    container_name: notyet-app
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      PORT: ${APP_PORT}
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+      WAIT_BATCH_MAX_SIZE: ${WAIT_BATCH_MAX_SIZE}
+      WAIT_BATCH_INTERVAL_MS: ${WAIT_BATCH_INTERVAL_MS}
+      WAIT_BATCH_ACK_TIMEOUT_MS: ${WAIT_BATCH_ACK_TIMEOUT_MS}
+    ports:
+      - "${APP_PORT}:${APP_PORT}"
 
 volumes:
   notyet_pg_data:
