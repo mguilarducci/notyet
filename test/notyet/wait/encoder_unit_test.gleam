@@ -1,17 +1,36 @@
 import gleam/json
+import gleam/option.{None}
 import gleam/string
 import gleam/time/timestamp
 import notyet/wait
+import notyet/wait/record
+import youid/uuid
+
+const id_string = "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+
+const activity_string = "1b4e28ba-2fa1-4d3b-a3f5-ccb4d2e3f000"
 
 pub fn encode_response_shape_test() {
+  let assert Ok(id) = uuid.from_string(id_string)
+  let assert Ok(activity) = uuid.from_string(activity_string)
   let created_at = timestamp.from_unix_seconds(1000)
   let for_time = timestamp.from_unix_seconds(1300)
+  let row =
+    record.WaitRecord(
+      id: id,
+      activity: activity,
+      data: None,
+      for_duration: "5 minutes",
+      wait_until: for_time,
+      created_at: created_at,
+    )
   let output =
-    wait.encode_response("abc-123", created_at, for_time)
+    wait.encode_response(row)
     |> json.to_string
 
-  assert string.contains(output, "\"id\":\"abc-123\"")
-  assert string.contains(output, "\"status\":\"waiting\"")
+  assert string.contains(output, "\"id\":\"" <> id_string <> "\"")
+  assert string.contains(output, "\"activity\":\"" <> activity_string <> "\"")
+  assert string.contains(output, "\"status\":\"received\"")
   assert string.contains(output, "\"created_at\":\"1970-01-01T00:16:40Z\"")
   assert string.contains(output, "\"for\":\"1970-01-01T00:21:40Z\"")
 }

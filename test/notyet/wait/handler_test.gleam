@@ -1,139 +1,94 @@
 import gleam/dynamic/decode
 import gleam/http
+import gleam/http/request
 import gleam/json
-import gleam/string
-import gleam/time/duration
-import gleam/time/timestamp
+import gleam/otp/actor
 import notyet/wait
+import notyet/wait/batch
 import notyet/web
+import test_helper
 import wisp/simulate
 
 const v4 = "f47ac10b-58cc-4372-a567-0e02b2c3d479"
 
-fn post(body_json: json.Json) {
+fn ctx_with_writer(db) -> web.Context {
+  let assert Ok(actor.Started(_, subject)) =
+    batch.start(db, batch.Config(max_size: 1, interval_ms: 200))
+  web.Context(batch: subject, ack_timeout_ms: 5000)
+}
+
+fn body(json_string: String) {
   simulate.request(http.Post, "/wait")
-  |> simulate.json_body(body_json)
-  |> wait.create(web.Context)
+  |> simulate.string_body(json_string)
+  |> request.set_header("content-type", "application/json")
 }
 
-fn read_field(response, field) {
-  let assert Ok(value) =
-    simulate.read_body(response)
-    |> json.parse(decode.at([field], decode.string))
-  value
-}
-
-pub fn valid_post_returns_201_test() {
+pub fn create_persists_and_returns_201_test() {
+  use db <- test_helper.with_db
+  let ctx = ctx_with_writer(db)
   let response =
-    post(
-      json.object([
-        #("for", json.string("5 minutes")),
-        #("activity", json.string(v4)),
-      ]),
-    )
+    body("{\"for\":\"5 minutes\",\"activity\":\"" <> v4 <> "\"}")
+    |> wait.create(ctx)
   assert response.status == 201
+  assert test_helper.count_waits(db) == 1
 }
 
-pub fn response_status_field_is_waiting_test() {
+pub fn create_with_data_test() {
+  use db <- test_helper.with_db
+  let ctx = ctx_with_writer(db)
   let response =
-    post(
-      json.object([
-        #("for", json.string("5 minutes")),
-        #("activity", json.string(v4)),
-      ]),
+    body(
+      "{\"for\":\"1 hour\",\"activity\":\"" <> v4 <> "\",\"data\":{\"k\":1}}",
     )
-  assert read_field(response, "status") == "waiting"
+    |> wait.create(ctx)
+  assert response.status == 201
+  assert test_helper.count_waits(db) == 1
 }
 
-pub fn response_id_is_non_empty_test() {
-  let response =
-    post(
-      json.object([
-        #("for", json.string("5 minutes")),
-        #("activity", json.string(v4)),
-      ]),
-    )
-  assert read_field(response, "id") != ""
+pub fn create_missing_activity_422_test() {
+  use db <- test_helper.with_db
+  let ctx = ctx_with_writer(db)
+  let response = body("{\"for\":\"5 minutes\"}") |> wait.create(ctx)
+  assert response.status == 422
+  assert test_helper.count_waits(db) == 0
 }
 
-pub fn timestamps_are_utc_test() {
+pub fn create_non_v4_activity_422_test() {
+  use db <- test_helper.with_db
+  let ctx = ctx_with_writer(db)
+  let v7 = "018f6f6e-7000-7000-8000-000000000000"
   let response =
-    post(
-      json.object([
-        #("for", json.string("5 minutes")),
-        #("activity", json.string(v4)),
-      ]),
-    )
-  assert string.ends_with(read_field(response, "created_at"), "Z")
-  assert string.ends_with(read_field(response, "for"), "Z")
-}
-
-pub fn for_is_now_plus_duration_test() {
-  let response =
-    post(
-      json.object([
-        #("for", json.string("5 minutes")),
-        #("activity", json.string(v4)),
-      ]),
-    )
-  let assert Ok(created_at) =
-    timestamp.parse_rfc3339(read_field(response, "created_at"))
-  let assert Ok(for_time) = timestamp.parse_rfc3339(read_field(response, "for"))
-  // difference(left, right) is right - left, so this is for - created_at.
-  assert timestamp.difference(created_at, for_time) == duration.seconds(300)
-}
-
-pub fn empty_for_returns_422_test() {
-  let response =
-    post(
-      json.object([
-        #("for", json.string("")),
-        #("activity", json.string(v4)),
-      ]),
-    )
+    body("{\"for\":\"5 minutes\",\"activity\":\"" <> v7 <> "\"}")
+    |> wait.create(ctx)
   assert response.status == 422
 }
 
-pub fn month_unit_returns_422_test() {
+pub fn create_bad_for_422_test() {
+  use db <- test_helper.with_db
+  let ctx = ctx_with_writer(db)
   let response =
-    post(
-      json.object([
-        #("for", json.string("5 months")),
-        #("activity", json.string(v4)),
-      ]),
-    )
+    body("{\"for\":\"5 banana\",\"activity\":\"" <> v4 <> "\"}")
+    |> wait.create(ctx)
   assert response.status == 422
 }
 
-pub fn valid_post_with_data_returns_201_test() {
-  let body =
-    json.object([
-      #("for", json.string("5 minutes")),
-      #("activity", json.string(v4)),
-      #("data", json.object([#("abc", json.int(1))])),
-    ])
-  let response = post(body)
-  assert response.status == 201
-}
-
-pub fn post_without_data_returns_201_test() {
+pub fn response_contains_activity_and_received_status_test() {
+  use db <- test_helper.with_db
+  let ctx = ctx_with_writer(db)
   let response =
-    post(
-      json.object([
-        #("for", json.string("5 minutes")),
-        #("activity", json.string(v4)),
-      ]),
-    )
-  assert response.status == 201
-}
-
-pub fn data_not_object_returns_422_test() {
-  let body =
-    json.object([
-      #("for", json.string("5 minutes")),
-      #("activity", json.string(v4)),
-      #("data", json.array([1, 2], json.int)),
-    ])
-  let response = post(body)
-  assert response.status == 422
+    body("{\"for\":\"5 minutes\",\"activity\":\"" <> v4 <> "\"}")
+    |> wait.create(ctx)
+  let body_string = simulate.read_body(response)
+  let assert Ok(activity) =
+    json.parse(body_string, {
+      use a <- decode.field("activity", decode.string)
+      decode.success(a)
+    })
+  assert activity == v4
+  let assert Ok(status) =
+    json.parse(body_string, {
+      use s <- decode.field("status", decode.string)
+      decode.success(s)
+    })
+  assert status == "received"
 }
