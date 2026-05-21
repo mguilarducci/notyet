@@ -4,8 +4,14 @@ import notyet/router
 import notyet/web
 import wisp/simulate
 
+const v4 = "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+
 pub fn post_wait_dispatches_to_handler_test() {
-  let body = json.object([#("for", json.string("5 minutes"))])
+  let body =
+    json.object([
+      #("for", json.string("5 minutes")),
+      #("activity", json.string(v4)),
+    ])
   let response =
     simulate.request(http.Post, "/wait")
     |> simulate.json_body(body)
@@ -15,7 +21,11 @@ pub fn post_wait_dispatches_to_handler_test() {
 }
 
 pub fn invalid_duration_returns_422_test() {
-  let body = json.object([#("for", json.string("nope"))])
+  let body =
+    json.object([
+      #("for", json.string("nope")),
+      #("activity", json.string(v4)),
+    ])
   let response =
     simulate.request(http.Post, "/wait")
     |> simulate.json_body(body)
@@ -44,6 +54,7 @@ pub fn post_wait_with_data_dispatches_to_handler_test() {
   let body =
     json.object([
       #("for", json.string("5 minutes")),
+      #("activity", json.string(v4)),
       #("data", json.object([#("abc", json.int(1))])),
     ])
   let response =

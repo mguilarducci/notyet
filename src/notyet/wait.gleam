@@ -9,28 +9,53 @@ import notyet/wait/duration as duration_parser
 import notyet/wait/json_value.{type JsonValue}
 import notyet/web.{type Context}
 import wisp.{type Request, type Response}
-import youid/uuid
+import youid/uuid.{type Uuid}
 
 pub type WaitRequest {
-  WaitRequest(duration: Duration, data: Option(JsonValue))
+  WaitRequest(
+    duration: Duration,
+    raw_for: String,
+    activity: Uuid,
+    data: Option(JsonValue),
+  )
 }
 
-fn duration_decoder() -> decode.Decoder(Duration) {
+/// Decodes the "for" field into both the parsed duration and its raw string.
+fn for_decoder() -> decode.Decoder(#(Duration, String)) {
   use s <- decode.then(decode.string)
   case duration_parser.parse(s) {
-    Ok(d) -> decode.success(d)
-    Error(_) -> decode.failure(duration.empty, "valid duration string")
+    Ok(d) -> decode.success(#(d, s))
+    Error(_) -> decode.failure(#(duration.empty, ""), "valid duration string")
+  }
+}
+
+/// Decodes "activity" as a strict UUID v4. Non-string, non-UUID, or non-v4 fail.
+fn activity_decoder() -> decode.Decoder(Uuid) {
+  use s <- decode.then(decode.string)
+  case uuid.from_string(s) {
+    Ok(u) ->
+      case uuid.version(u) == uuid.V4 {
+        True -> decode.success(u)
+        False -> decode.failure(uuid.v4(), "activity must be a UUID v4")
+      }
+    Error(_) -> decode.failure(uuid.v4(), "activity must be a UUID v4")
   }
 }
 
 pub fn wait_decoder() -> decode.Decoder(WaitRequest) {
-  use parsed <- decode.field("for", duration_decoder())
+  use parsed <- decode.field("for", for_decoder())
+  use activity <- decode.field("activity", activity_decoder())
   use data <- decode.optional_field(
     "data",
     None,
     json_value.object_decoder() |> decode.map(Some),
   )
-  decode.success(WaitRequest(duration: parsed, data: data))
+  decode.success(WaitRequest(
+    duration: parsed.0,
+    raw_for: parsed.1,
+    activity: activity,
+    data: data,
+  ))
 }
 
 pub fn encode_response(
@@ -55,7 +80,7 @@ pub fn create(req: Request, _ctx: Context) -> Response {
 
   case decode.run(body, wait_decoder()) {
     Error(_) -> wisp.unprocessable_content()
-    Ok(WaitRequest(duration: d, data: _)) -> {
+    Ok(WaitRequest(duration: d, raw_for: _, activity: _, data: _)) -> {
       let now = timestamp.system_time()
       let for_time = timestamp.add(now, d)
 
