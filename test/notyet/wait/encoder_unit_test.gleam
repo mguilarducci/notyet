@@ -19,7 +19,7 @@ pub fn encode_response_shape_test() {
     record.PersistedWait(
       id: id,
       activity: activity,
-      status: status.Received,
+      status: status.Accepted,
       created_at: created_at,
       wait_until: for_time,
     )
@@ -29,7 +29,7 @@ pub fn encode_response_shape_test() {
 
   assert string.contains(output, "\"id\":\"" <> id_string <> "\"")
   assert string.contains(output, "\"activity\":\"" <> activity_string <> "\"")
-  assert string.contains(output, "\"status\":\"received\"")
+  assert string.contains(output, "\"status\":\"accepted\"")
   assert string.contains(output, "\"created_at\":\"1970-01-01T00:16:40Z\"")
   assert string.contains(output, "\"for\":\"1970-01-01T00:21:40Z\"")
 }

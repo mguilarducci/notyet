@@ -6,7 +6,7 @@ CREATE TABLE waits (
     data            JSONB,
     for_duration    TEXT NOT NULL,
     wait_until      TIMESTAMPTZ NOT NULL,
-    status          TEXT NOT NULL DEFAULT 'received' CHECK (status IN ('received', 'waiting')),
+    status          TEXT NOT NULL DEFAULT 'accepted' CHECK (status IN ('accepted', 'waiting')),
     created_at      TIMESTAMPTZ NOT NULL
 );
 

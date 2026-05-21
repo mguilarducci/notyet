@@ -32,6 +32,6 @@ pub fn post_wait_happy_path_test() {
     |> router.handle_request(ctx)
   assert response.status == 201
   assert test_helper.json_field(simulate.read_body(response), "status")
-    == "received"
+    == "accepted"
   assert test_helper.count_waits(db) == 1
 }

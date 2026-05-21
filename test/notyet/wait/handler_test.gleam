@@ -75,7 +75,7 @@ pub fn response_contains_activity_and_received_status_test() {
     |> wait.create(ctx(db))
   let body = simulate.read_body(response)
   assert test_helper.json_field(body, "activity") == test_helper.v4
-  assert test_helper.json_field(body, "status") == "received"
+  assert test_helper.json_field(body, "status") == "accepted"
 }
 
 pub fn missing_idempotency_key_422_test() {
