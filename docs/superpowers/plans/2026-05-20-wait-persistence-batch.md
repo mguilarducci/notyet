@@ -182,6 +182,8 @@ volumes:
 
 - [ ] **Step 6: Write `Makefile`**
 
+No pipes / `&&` / `;` anywhere — `help` is plain `@echo` lines, one per command:
+
 ```makefile
 SHELL := /bin/bash
 include .env
@@ -190,45 +192,57 @@ export
 .PHONY: help db-up db-down db-logs migrate migrate-new migrate-rollback migrate-status sqlgen sqlcheck run test build deps
 
 help:
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}'
+	@echo "db-up            Start Postgres in Docker"
+	@echo "db-down          Stop Postgres"
+	@echo "db-logs          Tail Postgres logs"
+	@echo "migrate          Apply all pending migrations"
+	@echo "migrate-new      Create migration (NAME=add_foo)"
+	@echo "migrate-rollback Roll back last migration"
+	@echo "migrate-status   Show migration state"
+	@echo "sqlgen           Generate typed SQL modules"
+	@echo "sqlcheck         Verify generated SQL is up to date"
+	@echo "run              Run the app"
+	@echo "test             Run tests"
+	@echo "build            Build the project"
+	@echo "deps             Fetch deps"
 
-db-up: ## Start Postgres in Docker
+db-up:
 	docker compose up -d postgres
 
-db-down: ## Stop Postgres
+db-down:
 	docker compose down
 
-db-logs: ## Tail Postgres logs
+db-logs:
 	docker compose logs -f postgres
 
-migrate: ## Apply all pending migrations
+migrate:
 	gleam run -m cigogne all
 
-migrate-new: ## Create migration. Use: make migrate-new NAME=add_foo
+migrate-new:
 	gleam run -m cigogne -- new --name $(NAME)
 
-migrate-rollback: ## Roll back last migration
+migrate-rollback:
 	gleam run -m cigogne down
 
-migrate-status: ## Show migration state
+migrate-status:
 	gleam run -m cigogne show
 
-sqlgen: ## Generate typed SQL modules from .sql files
+sqlgen:
 	gleam run -m squirrel
 
-sqlcheck: ## Verify generated SQL is up to date
+sqlcheck:
 	gleam run -m squirrel check
 
-run: ## Run the app
+run:
 	gleam run
 
-test: ## Run tests
+test:
 	gleam test
 
-build: ## Build the project
+build:
 	gleam build
 
-deps: ## Fetch deps
+deps:
 	gleam deps download
 ```
 
@@ -249,11 +263,12 @@ git commit -m "build: docker-compose postgres 18, env config, cigogne, makefile"
 
 - [ ] **Step 9: Ensure `.env` is ignored**
 
-Check `.gitignore` contains `.env`. If not, add the line and commit:
+Read `.gitignore`. If it has no `.env` line, append one (use the Edit/Write tool — not a shell `>>` or `||`). If you changed it, commit:
 
 ```bash
-grep -qxF '.env' .gitignore || echo '.env' >> .gitignore
 git add .gitignore
+```
+```bash
 git commit -m "chore: gitignore .env"
 ```
 
@@ -930,7 +945,7 @@ Add `import gleam/dynamic/decode` at the top.
 Run: `make migrate` (ensure table exists), then `gleam test`
 Expected: PASS — rows inserted, NULL sentinel works, empty list is a clean no-op.
 
-> If a test fails because `DATABASE_URL` isn't exported into the shell, run with: `set -a; source .env; set +a; gleam test` (the Makefile's `test` target inherits `.env` via `include`/`export`, so `make test` works directly).
+> Run tests via `make test` — the Makefile's `test` target inherits `.env` via `include`/`export`, so `DATABASE_URL` is set. (Avoid manually chaining `source .env; gleam test`; use the make target, which is a single command.)
 
 - [ ] **Step 6: Commit**
 
@@ -1746,7 +1761,7 @@ git commit -m "docs: document activity, batched persistence, env, and docker"
 
 ## Final verification
 
-- [ ] `make db-up && make migrate && gleam test` — full suite green against live Postgres.
-- [ ] `docker compose down -v && docker compose up --build` — postgres → migrate (exit 0) → app serving; `POST /wait` returns `201` and persists.
+- [ ] `make db-up`, then `make migrate`, then `make test` — full suite green against live Postgres (each its own command, no chaining).
+- [ ] `docker compose down -v`, then `docker compose up --build` — postgres → migrate (exit 0) → app serving; `POST /wait` returns `201` and persists.
 - [ ] `gleam format --check` — formatting clean.
-- [ ] No hardcoded config: every value comes from env (`grep` for stray literals in `src/notyet.gleam`).
+- [ ] No hardcoded config: every value comes from env (check `src/notyet.gleam` for stray literals).
