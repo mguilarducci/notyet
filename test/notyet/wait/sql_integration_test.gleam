@@ -1,7 +1,4 @@
 import gleam/dynamic/decode
-import gleam/list
-import gleam/time/calendar
-import gleam/time/timestamp
 import notyet/wait/sql
 import pog
 import test_helper
@@ -14,7 +11,7 @@ const ts = "2026-05-20T12:00:00Z"
 
 pub fn insert_two_rows_test() {
   use db <- test_helper.with_db
-  let assert Ok(pog.Returned(count, rows)) =
+  let assert Ok(pog.Returned(count, _)) =
     sql.insert_waits(
       db,
       [v4_a, v4_b],
@@ -26,7 +23,6 @@ pub fn insert_two_rows_test() {
       [ts, ts],
     )
   assert count == 2
-  assert list.length(rows) == 2
   assert test_helper.count_waits(db) == 2
 }
 
@@ -60,15 +56,33 @@ pub fn empty_list_no_op_test() {
   assert test_helper.count_waits(db) == 0
 }
 
+// DO NOTHING: a repeated key across calls inserts no second row, no error.
 pub fn same_key_dedups_to_one_row_test() {
   use db <- test_helper.with_db
-  let assert Ok(pog.Returned(_, [row1])) =
+  let assert Ok(_) =
     sql.insert_waits(db, [v4_a], [v4_a], ["key-1"], [""], ["5 minutes"], [ts], [
       ts,
     ])
-  let assert Ok(pog.Returned(_, [row2])) =
+  let assert Ok(_) =
     sql.insert_waits(db, [v4_b], [v4_b], ["key-1"], [""], ["1 hour"], [ts], [ts])
-  assert row1.id == row2.id
+  assert test_helper.count_waits(db) == 1
+}
+
+// DO NOTHING tolerates an intra-statement duplicate key (unlike DO UPDATE,
+// which raises "cannot affect row a second time").
+pub fn intra_batch_same_key_one_row_test() {
+  use db <- test_helper.with_db
+  let assert Ok(_) =
+    sql.insert_waits(
+      db,
+      [v4_a, v4_b],
+      [v4_a, v4_b],
+      ["same", "same"],
+      ["", ""],
+      ["1 day", "1 day"],
+      [ts, ts],
+      [ts, ts],
+    )
   assert test_helper.count_waits(db) == 1
 }
 
@@ -79,17 +93,4 @@ pub fn distinct_keys_two_rows_test() {
   let assert Ok(_) =
     sql.insert_waits(db, [v4_b], [v4_b], ["key-2"], [""], ["1 day"], [ts], [ts])
   assert test_helper.count_waits(db) == 2
-}
-
-// The RETURNING timestamps use `AT TIME ZONE 'UTC'` so the DB->Gleam round-trip
-// is independent of the session timezone. Assert the returned instants equal
-// what was inserted (RFC3339 UTC, `Z`).
-pub fn timestamps_round_trip_utc_test() {
-  use db <- test_helper.with_db
-  let assert Ok(pog.Returned(_, [row])) =
-    sql.insert_waits(db, [v4_a], [v4_a], ["rt-key"], [""], ["5 minutes"], [ts], [
-      ts,
-    ])
-  assert timestamp.to_rfc3339(row.created_at, calendar.utc_offset) == ts
-  assert timestamp.to_rfc3339(row.wait_until, calendar.utc_offset) == ts
 }

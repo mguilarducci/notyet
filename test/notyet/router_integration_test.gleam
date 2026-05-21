@@ -6,7 +6,7 @@ import wisp/simulate
 fn dummy_ctx() {
   // Router-only paths (405/404) never reach the writer, so an unstarted-pool
   // connection is safe.
-  test_helper.writer_ctx(test_helper.dummy_connection(), 1, 200)
+  test_helper.writer_ctx(test_helper.dummy_connection(), 1, 200, 4)
 }
 
 pub fn wrong_method_returns_405_test() {
@@ -23,15 +23,15 @@ pub fn unknown_route_returns_404_test() {
 
 pub fn post_wait_happy_path_test() {
   use db <- test_helper.with_db
-  let ctx = test_helper.writer_ctx(db, 1, 200)
+  let ctx = test_helper.writer_ctx(db, 1, 200, 4)
   let response =
     test_helper.keyed_request(
       "{\"for\":\"5 minutes\",\"activity\":\"" <> test_helper.v4 <> "\"}",
       "router-k1",
     )
     |> router.handle_request(ctx)
-  assert response.status == 201
+  assert response.status == 202
   assert test_helper.json_field(simulate.read_body(response), "status")
     == "accepted"
-  assert test_helper.count_waits(db) == 1
+  assert test_helper.eventually_count(db, 1, 2000) == 1
 }

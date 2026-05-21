@@ -5,22 +5,24 @@ import test_helper
 import wisp/simulate
 
 fn ctx(db) {
-  test_helper.writer_ctx(db, 1, 200)
+  test_helper.writer_ctx(db, 1, 200, 4)
 }
 
-pub fn create_persists_and_returns_201_test() {
+pub fn create_accepts_and_persists_test() {
   use db <- test_helper.with_db
   let response =
     test_helper.keyed_request(
       "{\"for\":\"5 minutes\",\"activity\":\"" <> test_helper.v4 <> "\"}",
-      "k-201",
+      "k-202",
     )
     |> wait.create(ctx(db))
-  assert response.status == 201
-  assert test_helper.count_waits(db) == 1
+  assert response.status == 202
+  assert test_helper.json_field(simulate.read_body(response), "status")
+    == "accepted"
+  assert test_helper.eventually_count(db, 1, 2000) == 1
 }
 
-pub fn create_with_data_test() {
+pub fn create_with_data_persists_test() {
   use db <- test_helper.with_db
   let response =
     test_helper.keyed_request(
@@ -30,8 +32,8 @@ pub fn create_with_data_test() {
       "k-data",
     )
     |> wait.create(ctx(db))
-  assert response.status == 201
-  assert test_helper.count_waits(db) == 1
+  assert response.status == 202
+  assert test_helper.eventually_count(db, 1, 2000) == 1
 }
 
 pub fn create_missing_activity_422_test() {
@@ -65,19 +67,6 @@ pub fn create_bad_for_422_test() {
   assert response.status == 422
 }
 
-pub fn response_contains_activity_and_accepted_status_test() {
-  use db <- test_helper.with_db
-  let response =
-    test_helper.keyed_request(
-      "{\"for\":\"5 minutes\",\"activity\":\"" <> test_helper.v4 <> "\"}",
-      "k-shape",
-    )
-    |> wait.create(ctx(db))
-  let body = simulate.read_body(response)
-  assert test_helper.json_field(body, "activity") == test_helper.v4
-  assert test_helper.json_field(body, "status") == "accepted"
-}
-
 pub fn missing_idempotency_key_422_test() {
   use db <- test_helper.with_db
   // No Idempotency-Key header -> 422 before the body is even decoded.
@@ -92,7 +81,19 @@ pub fn missing_idempotency_key_422_test() {
   assert test_helper.count_waits(db) == 0
 }
 
-pub fn retry_same_key_returns_same_id_test() {
+pub fn empty_idempotency_key_422_test() {
+  use db <- test_helper.with_db
+  let response =
+    test_helper.keyed_request(
+      "{\"for\":\"5 minutes\",\"activity\":\"" <> test_helper.v4 <> "\"}",
+      "",
+    )
+    |> wait.create(ctx(db))
+  assert response.status == 422
+  assert test_helper.count_waits(db) == 0
+}
+
+pub fn retry_same_key_persists_once_test() {
   use db <- test_helper.with_db
   let context = ctx(db)
   let first =
@@ -101,21 +102,14 @@ pub fn retry_same_key_returns_same_id_test() {
       "k-1",
     )
     |> wait.create(context)
-  // Retry with the SAME key but a DIFFERENT duration: the original row wins and
-  // the new payload is ignored — same id AND same `for` as the first call.
+  // Retry with the SAME key but a DIFFERENT duration: dedup -> exactly one row.
   let second =
     test_helper.keyed_request(
       "{\"for\":\"1 hour\",\"activity\":\"" <> test_helper.v4 <> "\"}",
       "k-1",
     )
     |> wait.create(context)
-  assert first.status == 201
-  assert second.status == 201
-  let first_body = simulate.read_body(first)
-  let second_body = simulate.read_body(second)
-  assert test_helper.json_field(first_body, "id")
-    == test_helper.json_field(second_body, "id")
-  assert test_helper.json_field(first_body, "for")
-    == test_helper.json_field(second_body, "for")
-  assert test_helper.count_waits(db) == 1
+  assert first.status == 202
+  assert second.status == 202
+  assert test_helper.eventually_count(db, 1, 2000) == 1
 }

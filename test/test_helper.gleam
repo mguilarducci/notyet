@@ -76,9 +76,17 @@ pub fn start_writer(
   db: pog.Connection,
   max_size: Int,
   interval_ms: Int,
+  max_in_flight: Int,
 ) -> process.Subject(batch.Message) {
   let assert Ok(actor.Started(_, subject)) =
-    batch.start(db, batch.Config(max_size: max_size, interval_ms: interval_ms))
+    batch.start(
+      db,
+      batch.Config(
+        max_size: max_size,
+        interval_ms: interval_ms,
+        max_in_flight: max_in_flight,
+      ),
+    )
   subject
 }
 
@@ -86,11 +94,31 @@ pub fn writer_ctx(
   db: pog.Connection,
   max_size: Int,
   interval_ms: Int,
+  max_in_flight: Int,
 ) -> web.Context {
   web.Context(
-    batch: start_writer(db, max_size, interval_ms),
-    ack_timeout_ms: 5000,
+    batch: start_writer(db, max_size, interval_ms, max_in_flight),
+    enqueue_timeout_ms: 1000,
   )
+}
+
+/// Poll `count_waits` until it reaches `expected` or the deadline elapses, then
+/// return the final count. Needed because the write path is async (ack-on-
+/// enqueue): a fixed sleep would be flaky.
+pub fn eventually_count(
+  db: pog.Connection,
+  expected: Int,
+  deadline_ms: Int,
+) -> Int {
+  let n = count_waits(db)
+  case n >= expected, deadline_ms <= 0 {
+    True, _ -> n
+    False, True -> n
+    False, False -> {
+      process.sleep(10)
+      eventually_count(db, expected, deadline_ms - 10)
+    }
+  }
 }
 
 // Build a POST /wait request with a JSON body and an Idempotency-Key header.

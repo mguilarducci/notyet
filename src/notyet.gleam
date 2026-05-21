@@ -18,20 +18,31 @@ pub fn main() -> Nil {
   let assert Ok(port) = read_int("PORT")
   let assert Ok(max_size) = read_int("WAIT_BATCH_MAX_SIZE")
   let assert Ok(interval_ms) = read_int("WAIT_BATCH_INTERVAL_MS")
-  let assert Ok(ack_timeout_ms) = read_int("WAIT_BATCH_ACK_TIMEOUT_MS")
+  let assert Ok(max_in_flight) = read_int("WAIT_BATCH_MAX_IN_FLIGHT")
+  let assert Ok(pool_size) = read_int("WAIT_DB_POOL_SIZE")
+  let assert Ok(enqueue_timeout_ms) = read_int("WAIT_ENQUEUE_TIMEOUT_MS")
 
-  // Fail fast on incoherent batch config rather than emitting intermittent 500s
-  // (ack timeout must outlast a flush interval) or silently disabling batching.
+  // Fail fast on incoherent config rather than emitting intermittent failures.
   let assert True = max_size > 0
   let assert True = interval_ms > 0
-  let assert True = ack_timeout_ms > interval_ms
+  let assert True = max_in_flight > 0
+  let assert True = enqueue_timeout_ms > 0
+  // Inserts pipeline only if the pool can serve every concurrent worker; with a
+  // smaller pool they serialize on connection checkout and pipelining is lost.
+  let assert True = pool_size >= max_in_flight
 
   let pool_name = process.new_name("db_pool")
   let assert Ok(db_config) = pog.url_config(pool_name, database_url)
+  let db_config = pog.pool_size(db_config, pool_size)
   let db = pog.named_connection(pool_name)
 
   let batch_name = process.new_name("wait_batch")
-  let config = batch.Config(max_size: max_size, interval_ms: interval_ms)
+  let config =
+    batch.Config(
+      max_size: max_size,
+      interval_ms: interval_ms,
+      max_in_flight: max_in_flight,
+    )
 
   let assert Ok(_) =
     supervisor.new(supervisor.OneForOne)
@@ -40,7 +51,8 @@ pub fn main() -> Nil {
     |> supervisor.start
 
   let batch_subject = process.named_subject(batch_name)
-  let ctx = web.Context(batch: batch_subject, ack_timeout_ms: ack_timeout_ms)
+  let ctx =
+    web.Context(batch: batch_subject, enqueue_timeout_ms: enqueue_timeout_ms)
 
   let assert Ok(_) =
     router.handle_request(_, ctx)

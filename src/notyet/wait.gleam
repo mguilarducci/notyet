@@ -3,14 +3,12 @@ import gleam/http.{Post}
 import gleam/http/request
 import gleam/json
 import gleam/option.{type Option, None, Some}
-import gleam/time/calendar
 import gleam/time/duration.{type Duration}
 import gleam/time/timestamp
 import notyet/wait/batch
 import notyet/wait/duration as duration_parser
 import notyet/wait/json_value.{type JsonValue}
 import notyet/wait/record
-import notyet/wait/status
 import notyet/web.{type Context}
 import wisp.{type Request, type Response}
 import youid/uuid.{type Uuid}
@@ -64,22 +62,6 @@ pub fn wait_decoder() -> decode.Decoder(WaitRequest) {
   ))
 }
 
-pub fn encode_response(p: record.PersistedWait) -> json.Json {
-  json.object([
-    #("id", json.string(uuid.to_string(p.id))),
-    #("activity", json.string(uuid.to_string(p.activity))),
-    #("status", json.string(status.to_string(p.status))),
-    #(
-      "created_at",
-      json.string(timestamp.to_rfc3339(p.created_at, calendar.utc_offset)),
-    ),
-    #(
-      "for",
-      json.string(timestamp.to_rfc3339(p.wait_until, calendar.utc_offset)),
-    ),
-  ])
-}
-
 pub fn create(req: Request, ctx: Context) -> Response {
   use <- wisp.require_method(req, Post)
 
@@ -102,13 +84,17 @@ pub fn create(req: Request, ctx: Context) -> Response {
               wait_until: timestamp.add(now, wr.duration),
               created_at: now,
             )
-          case batch.enqueue(ctx.batch, row, ctx.ack_timeout_ms) {
-            Ok(persisted) ->
-              persisted
-              |> encode_response
+          case batch.enqueue(ctx.batch, row, ctx.enqueue_timeout_ms) {
+            Ok(_) ->
+              json.object([#("status", json.string("accepted"))])
               |> json.to_string
-              |> wisp.json_response(201)
-            Error(_) -> wisp.internal_server_error()
+              |> wisp.json_response(202)
+            // Shed: real client demand exceeded admission. 429 + Retry-After
+            // tells the client to back off; the Idempotency-Key makes the
+            // retry safe (it never creates a second row).
+            Error(_) ->
+              wisp.response(429)
+              |> wisp.set_header("retry-after", "1")
           }
         }
       }

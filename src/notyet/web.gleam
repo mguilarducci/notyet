@@ -3,7 +3,7 @@ import notyet/wait/batch
 import wisp
 
 pub type Context {
-  Context(batch: process.Subject(batch.Message), ack_timeout_ms: Int)
+  Context(batch: process.Subject(batch.Message), enqueue_timeout_ms: Int)
 }
 
 pub fn middleware(
