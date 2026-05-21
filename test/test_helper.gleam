@@ -1,8 +1,20 @@
 import envoy
 import gleam/dynamic/decode
 import gleam/erlang/process
+import gleam/http
+import gleam/http/request
+import gleam/json
+import gleam/otp/actor
 import gleam/otp/static_supervisor as supervisor
+import notyet/wait/batch
+import notyet/web
 import pog
+import wisp
+import wisp/simulate
+
+pub const v4 = "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+
+pub const v7 = "018f6f6e-7000-7000-8000-000000000000"
 
 // Each call allocates a fresh atom via process.new_name. At ~100+ integration
 // tests, switch to a shared pool started once per test process.
@@ -58,4 +70,42 @@ pub fn count_waits(db: pog.Connection) -> Int {
 pub fn dummy_connection() -> pog.Connection {
   process.new_name("dummy_unused_pool")
   |> pog.named_connection
+}
+
+pub fn start_writer(
+  db: pog.Connection,
+  max_size: Int,
+  interval_ms: Int,
+) -> process.Subject(batch.Message) {
+  let assert Ok(actor.Started(_, subject)) =
+    batch.start(db, batch.Config(max_size: max_size, interval_ms: interval_ms))
+  subject
+}
+
+pub fn writer_ctx(
+  db: pog.Connection,
+  max_size: Int,
+  interval_ms: Int,
+) -> web.Context {
+  web.Context(
+    batch: start_writer(db, max_size, interval_ms),
+    ack_timeout_ms: 5000,
+  )
+}
+
+// Build a POST /wait request with a JSON body and an Idempotency-Key header.
+pub fn keyed_request(json_body: String, key: String) -> wisp.Request {
+  simulate.request(http.Post, "/wait")
+  |> simulate.string_body(json_body)
+  |> request.set_header("content-type", "application/json")
+  |> request.set_header("idempotency-key", key)
+}
+
+pub fn json_field(body: String, field: String) -> String {
+  let assert Ok(value) =
+    json.parse(body, {
+      use v <- decode.field(field, decode.string)
+      decode.success(v)
+    })
+  value
 }

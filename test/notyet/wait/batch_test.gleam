@@ -2,7 +2,6 @@ import gleam/dict
 import gleam/erlang/process
 import gleam/list
 import gleam/option.{None, Some}
-import gleam/otp/actor
 import gleam/time/timestamp
 import notyet/wait/batch
 import notyet/wait/json_value.{JInt, JObject}
@@ -32,8 +31,7 @@ fn rec_with_key(key: String) -> record.WaitRecord {
 
 pub fn flush_by_size_test() {
   use db <- test_helper.with_db
-  let assert Ok(actor.Started(_, subject)) =
-    batch.start(db, batch.Config(max_size: 3, interval_ms: 60_000))
+  let subject = test_helper.start_writer(db, 3, 60_000)
 
   let r1 = batch.enqueue_async(subject, rec())
   let r2 = batch.enqueue_async(subject, rec())
@@ -47,8 +45,7 @@ pub fn flush_by_size_test() {
 
 pub fn flush_by_interval_test() {
   use db <- test_helper.with_db
-  let assert Ok(actor.Started(_, subject)) =
-    batch.start(db, batch.Config(max_size: 100, interval_ms: 150))
+  let subject = test_helper.start_writer(db, 100, 150)
 
   let r = batch.enqueue_async(subject, rec())
   let assert Ok(Ok(_)) = process.receive(r, 5000)
@@ -57,8 +54,7 @@ pub fn flush_by_interval_test() {
 
 pub fn no_flush_below_threshold_then_flush_test() {
   use db <- test_helper.with_db
-  let assert Ok(actor.Started(_, subject)) =
-    batch.start(db, batch.Config(max_size: 3, interval_ms: 60_000))
+  let subject = test_helper.start_writer(db, 3, 60_000)
 
   let r1 = batch.enqueue_async(subject, rec())
   let r2 = batch.enqueue_async(subject, rec())
@@ -73,8 +69,7 @@ pub fn no_flush_below_threshold_then_flush_test() {
 
 pub fn multiple_batches_test() {
   use db <- test_helper.with_db
-  let assert Ok(actor.Started(_, subject)) =
-    batch.start(db, batch.Config(max_size: 2, interval_ms: 200))
+  let subject = test_helper.start_writer(db, 2, 200)
 
   let replies = [
     batch.enqueue_async(subject, rec()),
@@ -91,8 +86,7 @@ pub fn multiple_batches_test() {
 
 pub fn flush_error_propagates_test() {
   use db <- test_helper.with_db
-  let assert Ok(actor.Started(_, subject)) =
-    batch.start(db, batch.Config(max_size: 1, interval_ms: 60_000))
+  let subject = test_helper.start_writer(db, 1, 60_000)
 
   let id = uuid.v4()
   let r1 =
@@ -102,6 +96,8 @@ pub fn flush_error_propagates_test() {
     )
   let assert Ok(Ok(_)) = process.receive(r1, 5000)
 
+  // Same id, DISTINCT key: the second insert hits the primary-key conflict
+  // (not the ON CONFLICT idempotency_key target) -> QueryError -> Error reply.
   let r2 =
     batch.enqueue_async(
       subject,
@@ -113,8 +109,7 @@ pub fn flush_error_propagates_test() {
 
 pub fn data_persisted_as_jsonb_test() {
   use db <- test_helper.with_db
-  let assert Ok(actor.Started(_, subject)) =
-    batch.start(db, batch.Config(max_size: 1, interval_ms: 60_000))
+  let subject = test_helper.start_writer(db, 1, 60_000)
 
   let r =
     record.WaitRecord(
@@ -128,8 +123,8 @@ pub fn data_persisted_as_jsonb_test() {
 
 pub fn same_key_in_one_batch_dedups_test() {
   use db <- test_helper.with_db
-  let assert Ok(actor.Started(_, subject)) =
-    batch.start(db, batch.Config(max_size: 2, interval_ms: 60_000))
+  let subject = test_helper.start_writer(db, 2, 60_000)
+
   let key = "dup-key"
   let r1 = batch.enqueue_async(subject, rec_with_key(key))
   let r2 = batch.enqueue_async(subject, rec_with_key(key))

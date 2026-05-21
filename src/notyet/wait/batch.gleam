@@ -38,6 +38,9 @@ type State {
     config: Config,
     self: Subject(Message),
     pending: List(Pending),
+    // Tracked explicitly so the size check is O(1) per enqueue rather than
+    // `list.length(pending)` (O(n) → O(n²) per batch at large max_size).
+    count: Int,
     timer: Option(Timer),
   )
 }
@@ -69,6 +72,7 @@ fn builder(
       config: config,
       self: self,
       pending: [],
+      count: 0,
       timer: None,
     ))
     |> actor.returning(self)
@@ -102,9 +106,14 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
   case message {
     FlushTick -> flush(state)
     Enqueue(record, reply) -> {
-      let was_empty = list.is_empty(state.pending)
-      let pending = [#(record, reply), ..state.pending]
-      let state = State(..state, pending: pending)
+      let was_empty = state.count == 0
+      let count = state.count + 1
+      let state =
+        State(
+          ..state,
+          pending: [#(record, reply), ..state.pending],
+          count: count,
+        )
 
       let state = case was_empty {
         True ->
@@ -119,7 +128,7 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
         False -> state
       }
 
-      case list.length(pending) >= state.config.max_size {
+      case count >= state.config.max_size {
         True -> flush(state)
         False -> actor.continue(state)
       }
@@ -130,7 +139,7 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
 fn flush(state: State) -> actor.Next(State, Message) {
   cancel_timer(state.timer)
   case state.pending {
-    [] -> actor.continue(State(..state, timer: None))
+    [] -> actor.continue(State(..state, count: 0, timer: None))
     pending -> {
       let waiters = list.reverse(pending)
       let distinct = dedup_by_key(list.map(waiters, fn(p) { p.0 }))
@@ -146,7 +155,7 @@ fn flush(state: State) -> actor.Next(State, Message) {
         }
         Error(_) -> list.each(waiters, fn(p) { process.send(p.1, Error(Nil)) })
       }
-      actor.continue(State(..state, pending: [], timer: None))
+      actor.continue(State(..state, pending: [], count: 0, timer: None))
     }
   }
 }
@@ -182,6 +191,9 @@ fn rows_by_key(
             wait_until: row.wait_until,
           ),
         )
+      // Unreachable: the `waits.status` CHECK constraint mirrors `Status`, so a
+      // persisted value always parses. Dropping the row here would (wrongly)
+      // 500 a committed write — kept only to satisfy exhaustiveness.
       Error(Nil) -> acc
     }
   })
@@ -211,6 +223,8 @@ fn do_insert(
   sql.insert_waits(db, ids, activities, keys, datas, fors, untils, createds)
 }
 
+/// Empty string is the "no data" sentinel: the insert query maps it back to
+/// SQL NULL via `NULLIF(d, '')`. Safe because no JSON object serializes to "".
 fn data_string(data: Option(json_value.JsonValue)) -> String {
   case data {
     Some(value) -> value |> json_value.encode |> json.to_string

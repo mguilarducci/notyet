@@ -38,6 +38,9 @@ pub fn encode(value: JsonValue) -> json.Json {
 }
 
 /// Decode any JSON value into a `JsonValue`. Used for nested values.
+///
+/// Branch order matters: `int` before `float` (so `5` is `JInt`, not `JFloat`)
+/// and object before `list`. Reordering would change which variant wins.
 pub fn decoder() -> decode.Decoder(JsonValue) {
   use <- decode.recursive
   decode.one_of(decode.bool |> decode.map(JBool), [

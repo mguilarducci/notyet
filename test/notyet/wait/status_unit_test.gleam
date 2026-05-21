@@ -21,9 +21,11 @@ pub fn from_string_unknown_test() {
 }
 
 pub fn round_trip_received_test() {
-  assert status.from_string(status.to_string(status.Received)) == Ok(status.Received)
+  assert status.from_string(status.to_string(status.Received))
+    == Ok(status.Received)
 }
 
 pub fn round_trip_waiting_test() {
-  assert status.from_string(status.to_string(status.Waiting)) == Ok(status.Waiting)
+  assert status.from_string(status.to_string(status.Waiting))
+    == Ok(status.Waiting)
 }

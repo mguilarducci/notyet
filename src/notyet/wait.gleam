@@ -15,6 +15,8 @@ import notyet/web.{type Context}
 import wisp.{type Request, type Response}
 import youid/uuid.{type Uuid}
 
+const idempotency_header = "idempotency-key"
+
 pub type WaitRequest {
   WaitRequest(
     duration: Duration,
@@ -81,7 +83,7 @@ pub fn encode_response(p: record.PersistedWait) -> json.Json {
 pub fn create(req: Request, ctx: Context) -> Response {
   use <- wisp.require_method(req, Post)
 
-  case request.get_header(req, "idempotency-key") {
+  case request.get_header(req, idempotency_header) {
     Error(_) -> wisp.unprocessable_content()
     Ok("") -> wisp.unprocessable_content()
     Ok(key) -> {
