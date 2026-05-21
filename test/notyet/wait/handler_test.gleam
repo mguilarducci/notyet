@@ -24,13 +24,13 @@ fn keyed_body(json_string: String, key: String) {
   |> request.set_header("idempotency-key", key)
 }
 
-fn response_id(response) -> String {
-  let assert Ok(id) =
-    json.parse(simulate.read_body(response), {
-      use v <- decode.field("id", decode.string)
+fn json_field(body: String, field: String) -> String {
+  let assert Ok(value) =
+    json.parse(body, {
+      use v <- decode.field(field, decode.string)
       decode.success(v)
     })
-  id
+  value
 }
 
 pub fn create_persists_and_returns_201_test() {
@@ -132,11 +132,16 @@ pub fn retry_same_key_returns_same_id_test() {
   let first =
     keyed_body("{\"for\":\"5 minutes\",\"activity\":\"" <> v4 <> "\"}", "k-1")
     |> wait.create(ctx)
+  // Retry with the SAME key but a DIFFERENT duration: the original row wins and
+  // the new payload is ignored — same id AND same `for` as the first call.
   let second =
     keyed_body("{\"for\":\"1 hour\",\"activity\":\"" <> v4 <> "\"}", "k-1")
     |> wait.create(ctx)
   assert first.status == 201
   assert second.status == 201
-  assert response_id(first) == response_id(second)
+  let first_body = simulate.read_body(first)
+  let second_body = simulate.read_body(second)
+  assert json_field(first_body, "id") == json_field(second_body, "id")
+  assert json_field(first_body, "for") == json_field(second_body, "for")
   assert test_helper.count_waits(db) == 1
 }
