@@ -20,6 +20,12 @@ pub fn main() -> Nil {
   let assert Ok(interval_ms) = read_int("WAIT_BATCH_INTERVAL_MS")
   let assert Ok(ack_timeout_ms) = read_int("WAIT_BATCH_ACK_TIMEOUT_MS")
 
+  // Fail fast on incoherent batch config rather than emitting intermittent 500s
+  // (ack timeout must outlast a flush interval) or silently disabling batching.
+  let assert True = max_size > 0
+  let assert True = interval_ms > 0
+  let assert True = ack_timeout_ms > interval_ms
+
   let pool_name = process.new_name("db_pool")
   let assert Ok(db_config) = pog.url_config(pool_name, database_url)
   let db = pog.named_connection(pool_name)
