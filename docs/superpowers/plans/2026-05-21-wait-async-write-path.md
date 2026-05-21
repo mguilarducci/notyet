@@ -832,15 +832,18 @@ pub fn multiple_batches_test() {
   assert test_helper.eventually_count(db, 5, 3000) == 5
 }
 
-// max_in_flight: 1 forces serialization. Each held batch can only drain when a
-// WorkerDone frees the slot, so reaching the full count proves draining works.
+// max_in_flight: 1 forces serialization. The first enqueue flushes (worker
+// busy); the second is HELD in the buffer (slot busy, no flush) and can only be
+// flushed once `WorkerDone` frees the slot — so both rows persisting proves the
+// held batch drains on WorkerDone. (A third synchronous enqueue would be shed:
+// with max_size 1 the buffer holds at most one held record, and the in-memory
+// calls outrun the real DB worker, so it cannot be accepted before WorkerDone.)
 pub fn worker_done_drains_held_batches_test() {
   use db <- test_helper.with_db
   let subject = test_helper.start_writer(db, 1, 60_000, 1)
   assert batch.enqueue(subject, rec(), 1000) == Ok(Nil)
   assert batch.enqueue(subject, rec(), 1000) == Ok(Nil)
-  assert batch.enqueue(subject, rec(), 1000) == Ok(Nil)
-  assert test_helper.eventually_count(db, 3, 3000) == 3
+  assert test_helper.eventually_count(db, 2, 3000) == 2
 }
 
 pub fn data_persisted_as_jsonb_test() {
