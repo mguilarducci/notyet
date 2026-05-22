@@ -30,8 +30,6 @@ pub fn get_task_returns_200_test() {
       db,
       [test_helper.v4],
       [test_helper.v4],
-      [test_helper.v4],
-      [""],
       ["5 minutes"],
       ["2026-05-20T12:00:00Z"],
       ["2026-05-20T12:00:00Z"],
@@ -64,10 +62,7 @@ pub fn post_task_happy_path_test() {
   use db <- test_helper.with_db
   let ctx = test_helper.writer_ctx(db, 1, 200, 4)
   let response =
-    test_helper.keyed_request(
-      "{\"for\":\"5 minutes\",\"activity\":\"" <> test_helper.v4 <> "\"}",
-      test_helper.v4,
-    )
+    test_helper.keyed_request("{\"wait_for\":\"5 minutes\"}", test_helper.v4)
     |> router.handle_request(ctx)
   assert response.status == 202
   assert test_helper.json_field(simulate.read_body(response), "status")

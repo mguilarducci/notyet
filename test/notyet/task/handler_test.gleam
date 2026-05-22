@@ -1,7 +1,5 @@
-import gleam/dynamic/decode
 import gleam/http
 import gleam/http/request
-import gleam/json
 import notyet/task
 import notyet/task/sql
 import test_helper
@@ -14,10 +12,7 @@ fn ctx(db) {
 pub fn create_accepts_and_persists_test() {
   use db <- test_helper.with_db
   let response =
-    test_helper.keyed_request(
-      "{\"for\":\"5 minutes\",\"activity\":\"" <> test_helper.v4 <> "\"}",
-      test_helper.v4,
-    )
+    test_helper.keyed_request("{\"wait_for\":\"5 minutes\"}", test_helper.v4)
     |> task.create(ctx(db))
   assert response.status == 202
   assert test_helper.json_field(simulate.read_body(response), "status")
@@ -25,47 +20,10 @@ pub fn create_accepts_and_persists_test() {
   assert test_helper.eventually_count(db, 1, 2000) == 1
 }
 
-pub fn create_with_data_persists_test() {
+pub fn create_bad_wait_for_422_test() {
   use db <- test_helper.with_db
   let response =
-    test_helper.keyed_request(
-      "{\"for\":\"1 hour\",\"activity\":\""
-        <> test_helper.v4
-        <> "\",\"data\":{\"k\":1}}",
-      test_helper.v4,
-    )
-    |> task.create(ctx(db))
-  assert response.status == 202
-  assert test_helper.eventually_count(db, 1, 2000) == 1
-}
-
-pub fn create_missing_activity_422_test() {
-  use db <- test_helper.with_db
-  let response =
-    test_helper.keyed_request("{\"for\":\"5 minutes\"}", test_helper.v4)
-    |> task.create(ctx(db))
-  assert response.status == 422
-  assert test_helper.count_tasks(db) == 0
-}
-
-pub fn create_non_v4_activity_422_test() {
-  use db <- test_helper.with_db
-  let response =
-    test_helper.keyed_request(
-      "{\"for\":\"5 minutes\",\"activity\":\"" <> test_helper.v7 <> "\"}",
-      test_helper.v4,
-    )
-    |> task.create(ctx(db))
-  assert response.status == 422
-}
-
-pub fn create_bad_for_422_test() {
-  use db <- test_helper.with_db
-  let response =
-    test_helper.keyed_request(
-      "{\"for\":\"5 banana\",\"activity\":\"" <> test_helper.v4 <> "\"}",
-      test_helper.v4,
-    )
+    test_helper.keyed_request("{\"wait_for\":\"5 banana\"}", test_helper.v4)
     |> task.create(ctx(db))
   assert response.status == 422
 }
@@ -75,9 +33,7 @@ pub fn missing_idempotency_key_422_test() {
   // No Idempotency-Key header -> 422 before the body is even decoded.
   let response =
     simulate.request(http.Post, "/tasks")
-    |> simulate.string_body(
-      "{\"for\":\"5 minutes\",\"activity\":\"" <> test_helper.v4 <> "\"}",
-    )
+    |> simulate.string_body("{\"wait_for\":\"5 minutes\"}")
     |> request.set_header("content-type", "application/json")
     |> task.create(ctx(db))
   assert response.status == 422
@@ -87,10 +43,7 @@ pub fn missing_idempotency_key_422_test() {
 pub fn empty_idempotency_key_422_test() {
   use db <- test_helper.with_db
   let response =
-    test_helper.keyed_request(
-      "{\"for\":\"5 minutes\",\"activity\":\"" <> test_helper.v4 <> "\"}",
-      "",
-    )
+    test_helper.keyed_request("{\"wait_for\":\"5 minutes\"}", "")
     |> task.create(ctx(db))
   assert response.status == 422
   assert test_helper.count_tasks(db) == 0
@@ -100,10 +53,7 @@ pub fn non_v4_idempotency_key_422_test() {
   use db <- test_helper.with_db
   // A non-UUID-v4 key is rejected before the body is decoded.
   let response =
-    test_helper.keyed_request(
-      "{\"for\":\"5 minutes\",\"activity\":\"" <> test_helper.v4 <> "\"}",
-      "not-a-uuid",
-    )
+    test_helper.keyed_request("{\"wait_for\":\"5 minutes\"}", "not-a-uuid")
     |> task.create(ctx(db))
   assert response.status == 422
   assert test_helper.count_tasks(db) == 0
@@ -114,9 +64,7 @@ fn seed(db, key) {
     sql.insert_tasks(
       db,
       [test_helper.v4],
-      [test_helper.v4],
       [key],
-      ["{\"k\":1}"],
       ["5 minutes"],
       ["2026-05-20T12:00:00Z"],
       ["2026-05-20T12:00:00Z"],
@@ -134,8 +82,7 @@ pub fn read_returns_200_with_resource_test() {
   let body = simulate.read_body(response)
   assert test_helper.json_field(body, "idempotency_key") == test_helper.v4
   assert test_helper.json_field(body, "status") == "accepted"
-  assert test_helper.json_field(body, "for") == "5 minutes"
-  assert test_helper.json_field(body, "activity") == test_helper.v4
+  assert test_helper.json_field(body, "wait_for") == "5 minutes"
 }
 
 pub fn read_missing_key_returns_404_test() {
@@ -160,33 +107,15 @@ pub fn retry_same_key_persists_once_test() {
   use db <- test_helper.with_db
   let context = ctx(db)
   let first =
-    test_helper.keyed_request(
-      "{\"for\":\"5 minutes\",\"activity\":\"" <> test_helper.v4 <> "\"}",
-      test_helper.v4,
-    )
+    test_helper.keyed_request("{\"wait_for\":\"5 minutes\"}", test_helper.v4)
     |> task.create(context)
   // Retry with the SAME key but a DIFFERENT duration: dedup -> exactly one row.
   let second =
-    test_helper.keyed_request(
-      "{\"for\":\"1 hour\",\"activity\":\"" <> test_helper.v4 <> "\"}",
-      test_helper.v4,
-    )
+    test_helper.keyed_request("{\"wait_for\":\"1 hour\"}", test_helper.v4)
     |> task.create(context)
   assert first.status == 202
   assert second.status == 202
   assert test_helper.eventually_count(db, 1, 2000) == 1
-}
-
-pub fn read_returns_data_object_test() {
-  use db <- test_helper.with_db
-  seed(db, test_helper.v4)
-  let response =
-    simulate.request(http.Get, "/tasks/" <> test_helper.v4)
-    |> task.read(ctx(db), test_helper.v4)
-  assert response.status == 200
-  let body = simulate.read_body(response)
-  let assert Ok(k) = json.parse(body, decode.at(["data", "k"], decode.int))
-  assert k == 1
 }
 
 pub fn read_wrong_method_returns_405_test() {

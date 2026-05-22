@@ -2,12 +2,10 @@ import gleam/dynamic/decode
 import gleam/http.{Get, Post}
 import gleam/http/request
 import gleam/json
-import gleam/option.{type Option, None, Some}
 import gleam/time/duration.{type Duration}
 import gleam/time/timestamp
 import notyet/task/batch
 import notyet/task/duration as duration_parser
-import notyet/task/json_value.{type JsonValue}
 import notyet/task/record
 import notyet/task/sql
 import notyet/task/status
@@ -20,16 +18,11 @@ import youid/uuid.{type Uuid}
 const idempotency_header = "idempotency-key"
 
 pub type TaskRequest {
-  TaskRequest(
-    duration: Duration,
-    raw_for: String,
-    activity: Uuid,
-    data: Option(JsonValue),
-  )
+  TaskRequest(duration: Duration, raw_wait_for: String)
 }
 
-/// Decodes the "for" field into both the parsed duration and its raw string.
-fn for_decoder() -> decode.Decoder(#(Duration, String)) {
+/// Decodes the "wait_for" field into both the parsed duration and its raw string.
+fn wait_for_decoder() -> decode.Decoder(#(Duration, String)) {
   use s <- decode.then(decode.string)
   case duration_parser.parse(s) {
     Ok(d) -> decode.success(#(d, s))
@@ -49,29 +42,9 @@ fn parse_uuid_v4(s: String) -> Result(Uuid, Nil) {
   }
 }
 
-/// Decodes "activity" as a strict UUID v4. Non-string, non-UUID, or non-v4 fail.
-fn activity_decoder() -> decode.Decoder(Uuid) {
-  use s <- decode.then(decode.string)
-  case parse_uuid_v4(s) {
-    Ok(u) -> decode.success(u)
-    Error(_) -> decode.failure(uuid.v4(), "activity must be a UUID v4")
-  }
-}
-
 pub fn task_decoder() -> decode.Decoder(TaskRequest) {
-  use parsed <- decode.field("for", for_decoder())
-  use activity <- decode.field("activity", activity_decoder())
-  use data <- decode.optional_field(
-    "data",
-    None,
-    json_value.object_decoder() |> decode.map(Some),
-  )
-  decode.success(TaskRequest(
-    duration: parsed.0,
-    raw_for: parsed.1,
-    activity: activity,
-    data: data,
-  ))
+  use parsed <- decode.field("wait_for", wait_for_decoder())
+  decode.success(TaskRequest(duration: parsed.0, raw_wait_for: parsed.1))
 }
 
 pub fn create(req: Request, ctx: Context) -> Response {
@@ -94,16 +67,14 @@ fn create_with_key(req: Request, ctx: Context, key: String) -> Response {
   use body <- wisp.require_json(req)
   case decode.run(body, task_decoder()) {
     Error(_) -> wisp.unprocessable_content()
-    Ok(wr) -> {
+    Ok(tr) -> {
       let now = timestamp.system_time()
       let row =
         record.TaskRecord(
           id: uuid.v4(),
-          activity: wr.activity,
           idempotency_key: key,
-          data: wr.data,
-          for_duration: wr.raw_for,
-          wait_until: timestamp.add(now, wr.duration),
+          wait_for: tr.raw_wait_for,
+          wait_until: timestamp.add(now, tr.duration),
           created_at: now,
         )
       case batch.enqueue(ctx.batch, row, ctx.enqueue_timeout_ms) {
@@ -149,35 +120,19 @@ fn read_by_key(ctx: Context, key: String) -> Response {
 }
 
 /// Map a persisted row into the read-model. The row is written only by this
-/// service through a schema with a UNIQUE key, a status CHECK, RFC3339
-/// timestamps, and object-or-empty `data`, so the conversions are total against
-/// stored data — hence `let assert`.
+/// service through a schema with a UNIQUE key, a status CHECK, and RFC3339
+/// timestamps, so the conversions are total against stored data — hence `let assert`.
 fn row_to_task(row: sql.GetTaskByIdempotencyKeyRow) -> view.Task {
   let assert Ok(id) = uuid.from_string(row.id)
-  let assert Ok(activity) = uuid.from_string(row.activity)
   let assert Ok(task_status) = status.from_string(row.status)
   let assert Ok(wait_until) = timestamp.parse_rfc3339(row.wait_until)
   let assert Ok(created_at) = timestamp.parse_rfc3339(row.created_at)
   view.Task(
     id: id,
-    activity: activity,
     idempotency_key: row.idempotency_key,
     status: task_status,
-    for_duration: row.for_duration,
+    wait_for: row.wait_for,
     wait_until: wait_until,
     created_at: created_at,
-    data: decode_data(row.data),
   )
-}
-
-/// `data` is the JSON object text, or `""` (the empty-string sentinel the read
-/// query emits for SQL NULL via COALESCE).
-fn decode_data(text: String) -> Option(JsonValue) {
-  case text {
-    "" -> None
-    json_text -> {
-      let assert Ok(value) = json.parse(json_text, json_value.decoder())
-      Some(value)
-    }
-  }
 }

@@ -1,10 +1,7 @@
-import gleam/dict
 import gleam/erlang/process
-import gleam/option.{None, Some}
 import gleam/otp/actor
 import gleam/time/timestamp
 import notyet/task/batch
-import notyet/task/json_value.{JInt, JObject}
 import notyet/task/record
 import pog
 import test_helper
@@ -13,10 +10,8 @@ import youid/uuid
 fn rec() -> record.TaskRecord {
   record.TaskRecord(
     id: uuid.v4(),
-    activity: uuid.v4(),
     idempotency_key: uuid.v4_string(),
-    data: None,
-    for_duration: "5 minutes",
+    wait_for: "5 minutes",
     wait_until: timestamp.system_time(),
     created_at: timestamp.system_time(),
   )
@@ -75,18 +70,6 @@ pub fn worker_done_drains_held_batches_test() {
   assert batch.enqueue(subject, rec(), 1000) == Ok(Nil)
   assert batch.enqueue(subject, rec(), 1000) == Ok(Nil)
   assert test_helper.eventually_count(db, 2, 3000) == 2
-}
-
-pub fn data_persisted_as_jsonb_test() {
-  use db <- test_helper.with_db
-  let subject = test_helper.start_writer(db, 1, 60_000, 4)
-  let r =
-    record.TaskRecord(
-      ..rec(),
-      data: Some(JObject(dict.from_list([#("k", JInt(1))]))),
-    )
-  assert batch.enqueue(subject, r, 1000) == Ok(Nil)
-  assert test_helper.eventually_count(db, 1, 2000) == 1
 }
 
 pub fn same_key_in_one_batch_dedups_test() {

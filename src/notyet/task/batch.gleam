@@ -1,6 +1,5 @@
 import gleam/erlang/process.{type Subject, type Timer}
 import gleam/int
-import gleam/json
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
@@ -8,7 +7,6 @@ import gleam/otp/supervision
 import gleam/string
 import gleam/time/calendar
 import gleam/time/timestamp
-import notyet/task/json_value
 import notyet/task/record.{type TaskRecord}
 import notyet/task/sql
 import pog
@@ -243,22 +241,11 @@ fn do_insert(
   records: List(TaskRecord),
 ) -> Result(pog.Returned(Nil), pog.QueryError) {
   let ids = list.map(records, fn(r) { uuid.to_string(r.id) })
-  let activities = list.map(records, fn(r) { uuid.to_string(r.activity) })
   let keys = list.map(records, fn(r) { r.idempotency_key })
-  let datas = list.map(records, fn(r) { data_string(r.data) })
-  let fors = list.map(records, fn(r) { r.for_duration })
+  let wait_fors = list.map(records, fn(r) { r.wait_for })
   let untils = list.map(records, fn(r) { rfc3339(r.wait_until) })
   let createds = list.map(records, fn(r) { rfc3339(r.created_at) })
-  sql.insert_tasks(db, ids, activities, keys, datas, fors, untils, createds)
-}
-
-/// Empty string is the "no data" sentinel: the insert maps it to SQL NULL via
-/// `NULLIF(d, '')`. Safe because no JSON object serializes to "".
-fn data_string(data: Option(json_value.JsonValue)) -> String {
-  case data {
-    Some(value) -> value |> json_value.encode |> json.to_string
-    None -> ""
-  }
+  sql.insert_tasks(db, ids, keys, wait_fors, untils, createds)
 }
 
 fn rfc3339(t: timestamp.Timestamp) -> String {

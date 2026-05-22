@@ -1,6 +1,4 @@
-import gleam/option.{type Option}
 import gleam/time/timestamp.{type Timestamp}
-import notyet/task/json_value.{type JsonValue}
 import youid/uuid.{type Uuid}
 
 /// A fully-formed task ready to persist. Built by the handler (id + timestamps
@@ -9,10 +7,8 @@ import youid/uuid.{type Uuid}
 pub type TaskRecord {
   TaskRecord(
     id: Uuid,
-    activity: Uuid,
     idempotency_key: String,
-    data: Option(JsonValue),
-    for_duration: String,
+    wait_for: String,
     wait_until: Timestamp,
     created_at: Timestamp,
   )
