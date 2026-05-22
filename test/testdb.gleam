@@ -1,0 +1,59 @@
+//// Test database provisioning via testcontainers.
+////
+//// `setup` starts a postgres:18-alpine container (reused across runs, Ryuk
+//// disabled so it survives into the coverage escript's separate BEAM), sets
+//// `DATABASE_URL` in-process, persists the URL to `build/coverage/.test_db_url`
+//// for the coverage escript to read, and applies migrations via the cigogne
+//// library API.
+
+import cigogne
+import cigogne/config
+import envoy
+import gleam/int
+import gleam/option
+import simplifile
+import testcontainers_gleam
+import testcontainers_gleam/postgres
+
+pub const url_file = "build/coverage/.test_db_url"
+
+pub fn setup() -> Nil {
+  let container =
+    postgres.new()
+    |> postgres.with_image("postgres:18-alpine")
+    |> postgres.with_reuse(True)
+    |> postgres.build
+
+  let assert Ok(running) = testcontainers_gleam.start_container(container)
+    as "failed to start postgres testcontainer (is Docker running?)"
+
+  let port = postgres.port(running)
+  let url = "postgres://test:test@localhost:" <> int.to_string(port) <> "/test"
+
+  envoy.set("DATABASE_URL", url)
+  let _ = simplifile.create_directory_all("build/coverage")
+  let _ = simplifile.write(to: url_file, contents: url)
+
+  migrate(url)
+}
+
+fn migrate(url: String) -> Nil {
+  let cfg =
+    config.Config(
+      database: config.UrlDbConfig(url),
+      migration_table: config.default_mig_table_config,
+      migrations: config.MigrationsConfig(
+        application_name: "notyet",
+        migration_folder: option.None,
+        dependencies: [],
+        no_hash_check: option.None,
+      ),
+    )
+
+  let assert Ok(engine) = cigogne.create_engine(cfg)
+    as "cigogne create_engine failed"
+  let assert Ok(_) =
+    cigogne.apply_migrations(engine, cigogne.get_unapplied_migrations(engine))
+    as "cigogne apply_migrations failed"
+  Nil
+}
