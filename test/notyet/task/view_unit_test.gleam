@@ -4,9 +4,9 @@ import gleam/json
 import gleam/option.{None, Some}
 import gleam/string
 import gleam/time/timestamp
-import notyet/wait/json_value.{type JsonValue, JInt, JObject}
-import notyet/wait/status
-import notyet/wait/view
+import notyet/task/json_value.{type JsonValue, JInt, JObject}
+import notyet/task/status
+import notyet/task/view
 import test_helper
 import youid/uuid
 
@@ -14,10 +14,10 @@ const id_str = "f47ac10b-58cc-4372-a567-0e02b2c3d479"
 
 const activity_str = "c9bf9e57-1685-4c89-bafb-ff5af830be8a"
 
-fn sample(data: option.Option(JsonValue)) -> view.Wait {
+fn sample(data: option.Option(JsonValue)) -> view.Task {
   let assert Ok(id) = uuid.from_string(id_str)
   let assert Ok(activity) = uuid.from_string(activity_str)
-  view.Wait(
+  view.Task(
     id: id,
     activity: activity,
     idempotency_key: "k-1",
@@ -65,7 +65,7 @@ pub fn encode_includes_data_object_when_present_test() {
 }
 
 pub fn encode_status_waiting_test() {
-  let waiting = view.Wait(..sample(None), status: status.Waiting)
+  let waiting = view.Task(..sample(None), status: status.Waiting)
   let body = json.to_string(view.encode(waiting))
   assert test_helper.json_field(body, "status") == "waiting"
 }

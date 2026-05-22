@@ -6,7 +6,7 @@ import gleam/http/request
 import gleam/json
 import gleam/otp/actor
 import gleam/otp/static_supervisor as supervisor
-import notyet/wait/batch
+import notyet/task/batch
 import notyet/web
 import pog
 import wisp
@@ -47,17 +47,17 @@ pub fn with_db(test_fn: fn(pog.Connection) -> Nil) -> Nil {
   let db = start_pool()
 
   let assert Ok(_) =
-    "TRUNCATE waits RESTART IDENTITY CASCADE"
+    "TRUNCATE tasks RESTART IDENTITY CASCADE"
     |> pog.query
     |> pog.execute(db)
-    as "TRUNCATE waits failed — did you run `make migrate`?"
+    as "TRUNCATE tasks failed — did you run `make migrate`?"
 
   test_fn(db)
 }
 
-pub fn count_waits(db: pog.Connection) -> Int {
+pub fn count_tasks(db: pog.Connection) -> Int {
   let assert Ok(pog.Returned(_, [count])) =
-    "SELECT count(*)::int FROM waits"
+    "SELECT count(*)::int FROM tasks"
     |> pog.query
     |> pog.returning({
       use n <- decode.field(0, decode.int)
@@ -105,7 +105,7 @@ pub fn writer_ctx(
   )
 }
 
-/// Poll `count_waits` until it reaches `expected` or the deadline elapses, then
+/// Poll `count_tasks` until it reaches `expected` or the deadline elapses, then
 /// return the final count. Needed because the write path is async (ack-on-
 /// enqueue): a fixed sleep would be flaky.
 pub fn eventually_count(
@@ -113,7 +113,7 @@ pub fn eventually_count(
   expected: Int,
   deadline_ms: Int,
 ) -> Int {
-  let n = count_waits(db)
+  let n = count_tasks(db)
   case n >= expected, deadline_ms <= 0 {
     True, _ -> n
     False, True -> n
@@ -124,9 +124,9 @@ pub fn eventually_count(
   }
 }
 
-// Build a POST /wait request with a JSON body and an Idempotency-Key header.
+// Build a POST /tasks request with a JSON body and an Idempotency-Key header.
 pub fn keyed_request(json_body: String, key: String) -> wisp.Request {
-  simulate.request(http.Post, "/wait")
+  simulate.request(http.Post, "/tasks")
   |> simulate.string_body(json_body)
   |> request.set_header("content-type", "application/json")
   |> request.set_header("idempotency-key", key)

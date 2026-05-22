@@ -8,9 +8,9 @@ import gleam/otp/supervision
 import gleam/string
 import gleam/time/calendar
 import gleam/time/timestamp
-import notyet/wait/json_value
-import notyet/wait/record.{type WaitRecord}
-import notyet/wait/sql
+import notyet/task/json_value
+import notyet/task/record.{type TaskRecord}
+import notyet/task/sql
 import pog
 import wisp
 import youid/uuid
@@ -19,7 +19,7 @@ pub opaque type Message {
   // Reply: `Ok(Nil)` = accepted into the buffer (handler -> 202);
   // `Error(Nil)` = shed because the buffer is full and every in-flight slot is
   // busy (handler -> 429).
-  Enqueue(record: WaitRecord, reply: Subject(Result(Nil, Nil)))
+  Enqueue(record: TaskRecord, reply: Subject(Result(Nil, Nil)))
   FlushTick
   // A monitored insert worker exited. The monitor `Down` is the SINGLE
   // completion signal: it fires exactly once per worker on ANY exit (success,
@@ -39,9 +39,9 @@ pub type Config {
 
 /// The batch insert, injectable so tests can supply a blocking insert to drive
 /// the shed / in-flight / pipelining paths deterministically. Production uses
-/// `do_insert`. The return type must match `sql.insert_waits`.
+/// `do_insert`. The return type must match `sql.insert_tasks`.
 type Insert =
-  fn(pog.Connection, List(WaitRecord)) ->
+  fn(pog.Connection, List(TaskRecord)) ->
     Result(pog.Returned(Nil), pog.QueryError)
 
 type State {
@@ -50,7 +50,7 @@ type State {
     config: Config,
     self: Subject(Message),
     insert: Insert,
-    pending: List(WaitRecord),
+    pending: List(TaskRecord),
     // Tracked explicitly so the size check is O(1) per enqueue rather than
     // `list.length` (O(n) -> O(n²) per batch at large max_size).
     count: Int,
@@ -120,7 +120,7 @@ fn builder(
 /// (rescued by wisp -> 500). `Ok(Nil)` -> 202, `Error(Nil)` -> 429.
 pub fn enqueue(
   subject: Subject(Message),
-  record: WaitRecord,
+  record: TaskRecord,
   timeout_ms: Int,
 ) -> Result(Nil, Nil) {
   process.call(subject, timeout_ms, Enqueue(record, _))
@@ -207,7 +207,7 @@ fn flush(state: State) -> actor.Next(State, Message) {
             Ok(_) -> Nil
             Error(e) ->
               wisp.log_error(
-                "wait batch insert failed ("
+                "task batch insert failed ("
                 <> int.to_string(list.length(records))
                 <> " rows): "
                 <> string.inspect(e),
@@ -240,7 +240,7 @@ fn cancel_timer(timer: Option(Timer)) -> Nil {
 
 fn do_insert(
   db: pog.Connection,
-  records: List(WaitRecord),
+  records: List(TaskRecord),
 ) -> Result(pog.Returned(Nil), pog.QueryError) {
   let ids = list.map(records, fn(r) { uuid.to_string(r.id) })
   let activities = list.map(records, fn(r) { uuid.to_string(r.activity) })
@@ -249,7 +249,7 @@ fn do_insert(
   let fors = list.map(records, fn(r) { r.for_duration })
   let untils = list.map(records, fn(r) { rfc3339(r.wait_until) })
   let createds = list.map(records, fn(r) { rfc3339(r.created_at) })
-  sql.insert_waits(db, ids, activities, keys, datas, fors, untils, createds)
+  sql.insert_tasks(db, ids, activities, keys, datas, fors, untils, createds)
 }
 
 /// Empty string is the "no data" sentinel: the insert maps it to SQL NULL via

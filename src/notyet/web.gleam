@@ -1,5 +1,5 @@
 import gleam/erlang/process
-import notyet/wait/batch
+import notyet/task/batch
 import pog
 import wisp
 

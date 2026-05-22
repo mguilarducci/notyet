@@ -1,6 +1,6 @@
 import gleam/dynamic/decode
 import gleam/time/timestamp
-import notyet/wait/sql
+import notyet/task/sql
 import pog
 import test_helper
 
@@ -13,7 +13,7 @@ const ts = "2026-05-20T12:00:00Z"
 pub fn insert_two_rows_test() {
   use db <- test_helper.with_db
   let assert Ok(pog.Returned(count, _)) =
-    sql.insert_waits(
+    sql.insert_tasks(
       db,
       [v4_a, v4_b],
       [v4_a, v4_b],
@@ -24,22 +24,22 @@ pub fn insert_two_rows_test() {
       [ts, ts],
     )
   assert count == 2
-  assert test_helper.count_waits(db) == 2
+  assert test_helper.count_tasks(db) == 2
 }
 
 pub fn insert_single_row_test() {
   use db <- test_helper.with_db
   let assert Ok(pog.Returned(count, _)) =
-    sql.insert_waits(db, [v4_a], [v4_a], ["k-a"], [""], ["1 day"], [ts], [ts])
+    sql.insert_tasks(db, [v4_a], [v4_a], ["k-a"], [""], ["1 day"], [ts], [ts])
   assert count == 1
 }
 
 pub fn empty_data_becomes_null_test() {
   use db <- test_helper.with_db
   let assert Ok(_) =
-    sql.insert_waits(db, [v4_a], [v4_a], ["k-a"], [""], ["1 day"], [ts], [ts])
+    sql.insert_tasks(db, [v4_a], [v4_a], ["k-a"], [""], ["1 day"], [ts], [ts])
   let assert Ok(pog.Returned(_, [is_null])) =
-    "SELECT (data IS NULL) FROM waits"
+    "SELECT (data IS NULL) FROM tasks"
     |> pog.query
     |> pog.returning({
       use b <- decode.field(0, decode.bool)
@@ -52,15 +52,15 @@ pub fn empty_data_becomes_null_test() {
 pub fn empty_list_no_op_test() {
   use db <- test_helper.with_db
   let assert Ok(pog.Returned(count, _)) =
-    sql.insert_waits(db, [], [], [], [], [], [], [])
+    sql.insert_tasks(db, [], [], [], [], [], [], [])
   assert count == 0
-  assert test_helper.count_waits(db) == 0
+  assert test_helper.count_tasks(db) == 0
 }
 
 pub fn get_by_key_returns_inserted_row_test() {
   use db <- test_helper.with_db
   let assert Ok(_) =
-    sql.insert_waits(
+    sql.insert_tasks(
       db,
       [v4_a],
       [v4_b],
@@ -71,7 +71,7 @@ pub fn get_by_key_returns_inserted_row_test() {
       [ts],
     )
   let assert Ok(pog.Returned(count, [row])) =
-    sql.get_wait_by_idempotency_key(db, "look-me-up")
+    sql.get_task_by_idempotency_key(db, "look-me-up")
   assert count == 1
   assert row.id == v4_a
   assert row.activity == v4_b
@@ -90,7 +90,7 @@ pub fn get_by_key_returns_inserted_row_test() {
 pub fn get_by_key_missing_returns_empty_test() {
   use db <- test_helper.with_db
   let assert Ok(pog.Returned(count, rows)) =
-    sql.get_wait_by_idempotency_key(db, "nope")
+    sql.get_task_by_idempotency_key(db, "nope")
   assert count == 0
   assert rows == []
 }
@@ -98,9 +98,9 @@ pub fn get_by_key_missing_returns_empty_test() {
 pub fn get_by_key_null_data_test() {
   use db <- test_helper.with_db
   let assert Ok(_) =
-    sql.insert_waits(db, [v4_a], [v4_a], ["no-data"], [""], ["1 day"], [ts], [ts])
+    sql.insert_tasks(db, [v4_a], [v4_a], ["no-data"], [""], ["1 day"], [ts], [ts])
   let assert Ok(pog.Returned(_, [row])) =
-    sql.get_wait_by_idempotency_key(db, "no-data")
+    sql.get_task_by_idempotency_key(db, "no-data")
   // COALESCE(data::text, '') maps SQL NULL to empty string.
   assert row.data == ""
 }
@@ -109,12 +109,12 @@ pub fn get_by_key_null_data_test() {
 pub fn same_key_dedups_to_one_row_test() {
   use db <- test_helper.with_db
   let assert Ok(_) =
-    sql.insert_waits(db, [v4_a], [v4_a], ["key-1"], [""], ["5 minutes"], [ts], [
+    sql.insert_tasks(db, [v4_a], [v4_a], ["key-1"], [""], ["5 minutes"], [ts], [
       ts,
     ])
   let assert Ok(_) =
-    sql.insert_waits(db, [v4_b], [v4_b], ["key-1"], [""], ["1 hour"], [ts], [ts])
-  assert test_helper.count_waits(db) == 1
+    sql.insert_tasks(db, [v4_b], [v4_b], ["key-1"], [""], ["1 hour"], [ts], [ts])
+  assert test_helper.count_tasks(db) == 1
 }
 
 // DO NOTHING tolerates an intra-statement duplicate key (unlike DO UPDATE,
@@ -122,7 +122,7 @@ pub fn same_key_dedups_to_one_row_test() {
 pub fn intra_batch_same_key_one_row_test() {
   use db <- test_helper.with_db
   let assert Ok(_) =
-    sql.insert_waits(
+    sql.insert_tasks(
       db,
       [v4_a, v4_b],
       [v4_a, v4_b],
@@ -132,14 +132,14 @@ pub fn intra_batch_same_key_one_row_test() {
       [ts, ts],
       [ts, ts],
     )
-  assert test_helper.count_waits(db) == 1
+  assert test_helper.count_tasks(db) == 1
 }
 
 pub fn distinct_keys_two_rows_test() {
   use db <- test_helper.with_db
   let assert Ok(_) =
-    sql.insert_waits(db, [v4_a], [v4_a], ["key-1"], [""], ["1 day"], [ts], [ts])
+    sql.insert_tasks(db, [v4_a], [v4_a], ["key-1"], [""], ["1 day"], [ts], [ts])
   let assert Ok(_) =
-    sql.insert_waits(db, [v4_b], [v4_b], ["key-2"], [""], ["1 day"], [ts], [ts])
-  assert test_helper.count_waits(db) == 2
+    sql.insert_tasks(db, [v4_b], [v4_b], ["key-2"], [""], ["1 day"], [ts], [ts])
+  assert test_helper.count_tasks(db) == 2
 }

@@ -1,6 +1,6 @@
 import gleam/http
 import notyet/router
-import notyet/wait/sql
+import notyet/task/sql
 import test_helper
 import wisp/simulate
 
@@ -12,7 +12,7 @@ fn dummy_ctx() {
 
 pub fn wrong_method_returns_405_test() {
   let response =
-    simulate.request(http.Put, "/wait") |> router.handle_request(dummy_ctx())
+    simulate.request(http.Put, "/tasks") |> router.handle_request(dummy_ctx())
   assert response.status == 405
 }
 
@@ -22,11 +22,11 @@ pub fn unknown_route_returns_404_test() {
   assert response.status == 404
 }
 
-pub fn get_wait_returns_200_test() {
+pub fn get_task_returns_200_test() {
   use db <- test_helper.with_db
   let ctx = test_helper.writer_ctx(db, 1, 200, 4)
   let assert Ok(_) =
-    sql.insert_waits(
+    sql.insert_tasks(
       db,
       [test_helper.v4],
       [test_helper.v4],
@@ -37,30 +37,30 @@ pub fn get_wait_returns_200_test() {
       ["2026-05-20T12:00:00Z"],
     )
   let response =
-    simulate.request(http.Get, "/wait/" <> test_helper.v4)
+    simulate.request(http.Get, "/tasks/" <> test_helper.v4)
     |> router.handle_request(ctx)
   assert response.status == 200
   assert test_helper.json_field(simulate.read_body(response), "idempotency_key")
     == test_helper.v4
 }
 
-pub fn get_wait_missing_returns_404_test() {
+pub fn get_task_missing_returns_404_test() {
   use db <- test_helper.with_db
   let ctx = test_helper.writer_ctx(db, 1, 200, 4)
   let response =
-    simulate.request(http.Get, "/wait/missing")
+    simulate.request(http.Get, "/tasks/missing")
     |> router.handle_request(ctx)
   assert response.status == 404
 }
 
-pub fn get_wait_wrong_method_returns_405_test() {
+pub fn get_task_wrong_method_returns_405_test() {
   let response =
-    simulate.request(http.Delete, "/wait/whatever")
+    simulate.request(http.Delete, "/tasks/whatever")
     |> router.handle_request(dummy_ctx())
   assert response.status == 405
 }
 
-pub fn post_wait_happy_path_test() {
+pub fn post_task_happy_path_test() {
   use db <- test_helper.with_db
   let ctx = test_helper.writer_ctx(db, 1, 200, 4)
   let response =

@@ -4,7 +4,7 @@ import gleam/int
 import gleam/otp/static_supervisor as supervisor
 import mist
 import notyet/router
-import notyet/wait/batch
+import notyet/task/batch
 import notyet/web
 import pog
 import wisp
@@ -16,11 +16,11 @@ pub fn main() -> Nil {
   let assert Ok(database_url) = envoy.get("DATABASE_URL")
   let assert Ok(secret_key_base) = envoy.get("SECRET_KEY_BASE")
   let assert Ok(port) = read_int("PORT")
-  let assert Ok(max_size) = read_int("WAIT_BATCH_MAX_SIZE")
-  let assert Ok(interval_ms) = read_int("WAIT_BATCH_INTERVAL_MS")
-  let assert Ok(max_in_flight) = read_int("WAIT_BATCH_MAX_IN_FLIGHT")
-  let assert Ok(pool_size) = read_int("WAIT_DB_POOL_SIZE")
-  let assert Ok(enqueue_timeout_ms) = read_int("WAIT_ENQUEUE_TIMEOUT_MS")
+  let assert Ok(max_size) = read_int("TASK_BATCH_MAX_SIZE")
+  let assert Ok(interval_ms) = read_int("TASK_BATCH_INTERVAL_MS")
+  let assert Ok(max_in_flight) = read_int("TASK_BATCH_MAX_IN_FLIGHT")
+  let assert Ok(pool_size) = read_int("TASK_DB_POOL_SIZE")
+  let assert Ok(enqueue_timeout_ms) = read_int("TASK_ENQUEUE_TIMEOUT_MS")
 
   // Fail fast on incoherent config rather than emitting intermittent failures.
   let assert True = max_size > 0
@@ -36,7 +36,7 @@ pub fn main() -> Nil {
   let db_config = pog.pool_size(db_config, pool_size)
   let db = pog.named_connection(pool_name)
 
-  let batch_name = process.new_name("wait_batch")
+  let batch_name = process.new_name("task_batch")
   let config =
     batch.Config(
       max_size: max_size,

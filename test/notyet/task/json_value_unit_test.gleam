@@ -2,7 +2,7 @@ import gleam/dict
 import gleam/dynamic/decode
 import gleam/json
 import gleam/result
-import notyet/wait/json_value.{
+import notyet/task/json_value.{
   JArray, JBool, JFloat, JInt, JNull, JObject, JString,
 }
 

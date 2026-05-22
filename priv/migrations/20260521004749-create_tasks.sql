@@ -1,5 +1,5 @@
 --- migration:up
-CREATE TABLE waits (
+CREATE TABLE tasks (
     id              UUID PRIMARY KEY,
     activity        UUID NOT NULL,
     idempotency_key TEXT NOT NULL,
@@ -10,10 +10,10 @@ CREATE TABLE waits (
     created_at      TIMESTAMPTZ NOT NULL
 );
 
-CREATE INDEX waits_activity_idx ON waits (activity);
-CREATE UNIQUE INDEX waits_idempotency_key_idx ON waits (idempotency_key);
+CREATE INDEX tasks_activity_idx ON tasks (activity);
+CREATE UNIQUE INDEX tasks_idempotency_key_idx ON tasks (idempotency_key);
 
 --- migration:down
-DROP TABLE waits;
+DROP TABLE tasks;
 
 --- migration:end

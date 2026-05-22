@@ -4,18 +4,18 @@ import gleam/json
 import gleam/option.{None, Some}
 import gleam/result
 import gleam/time/duration
-import notyet/wait
-import notyet/wait/json_value.{JInt, JObject}
+import notyet/task
+import notyet/task/json_value.{JInt, JObject}
 import youid/uuid
 
 const v4 = "f47ac10b-58cc-4372-a567-0e02b2c3d479"
 
 fn decode_json(
   input: String,
-) -> Result(wait.WaitRequest, List(decode.DecodeError)) {
+) -> Result(task.TaskRequest, List(decode.DecodeError)) {
   let assert Ok(decoded) = json.parse(input, decode.dynamic)
     as "test payload must be valid JSON"
-  decode.run(decoded, wait.wait_decoder())
+  decode.run(decoded, task.task_decoder())
 }
 
 pub fn valid_payload_decodes_test() {

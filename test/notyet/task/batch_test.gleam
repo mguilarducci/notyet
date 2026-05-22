@@ -3,15 +3,15 @@ import gleam/erlang/process
 import gleam/option.{None, Some}
 import gleam/otp/actor
 import gleam/time/timestamp
-import notyet/wait/batch
-import notyet/wait/json_value.{JInt, JObject}
-import notyet/wait/record
+import notyet/task/batch
+import notyet/task/json_value.{JInt, JObject}
+import notyet/task/record
 import pog
 import test_helper
 import youid/uuid
 
-fn rec() -> record.WaitRecord {
-  record.WaitRecord(
+fn rec() -> record.TaskRecord {
+  record.TaskRecord(
     id: uuid.v4(),
     activity: uuid.v4(),
     idempotency_key: uuid.v4_string(),
@@ -22,14 +22,14 @@ fn rec() -> record.WaitRecord {
   )
 }
 
-fn rec_with_key(key: String) -> record.WaitRecord {
-  record.WaitRecord(..rec(), idempotency_key: key)
+fn rec_with_key(key: String) -> record.TaskRecord {
+  record.TaskRecord(..rec(), idempotency_key: key)
 }
 
 // An insert that signals its start on `started`, then sleeps to hold the
 // in-flight slot. Lets a test deterministically observe concurrency / shedding.
 fn gated_insert(started: process.Subject(Nil)) {
-  fn(_db: pog.Connection, _records: List(record.WaitRecord)) {
+  fn(_db: pog.Connection, _records: List(record.TaskRecord)) {
     process.send(started, Nil)
     process.sleep(2000)
     Ok(pog.Returned(0, []))
@@ -81,7 +81,7 @@ pub fn data_persisted_as_jsonb_test() {
   use db <- test_helper.with_db
   let subject = test_helper.start_writer(db, 1, 60_000, 4)
   let r =
-    record.WaitRecord(
+    record.TaskRecord(
       ..rec(),
       data: Some(JObject(dict.from_list([#("k", JInt(1))]))),
     )

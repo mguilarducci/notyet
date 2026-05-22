@@ -5,13 +5,13 @@ import gleam/json
 import gleam/option.{type Option, None, Some}
 import gleam/time/duration.{type Duration}
 import gleam/time/timestamp
-import notyet/wait/batch
-import notyet/wait/duration as duration_parser
-import notyet/wait/json_value.{type JsonValue}
-import notyet/wait/record
-import notyet/wait/sql
-import notyet/wait/status
-import notyet/wait/view
+import notyet/task/batch
+import notyet/task/duration as duration_parser
+import notyet/task/json_value.{type JsonValue}
+import notyet/task/record
+import notyet/task/sql
+import notyet/task/status
+import notyet/task/view
 import notyet/web.{type Context}
 import pog
 import wisp.{type Request, type Response}
@@ -19,8 +19,8 @@ import youid/uuid.{type Uuid}
 
 const idempotency_header = "idempotency-key"
 
-pub type WaitRequest {
-  WaitRequest(
+pub type TaskRequest {
+  TaskRequest(
     duration: Duration,
     raw_for: String,
     activity: Uuid,
@@ -58,7 +58,7 @@ fn activity_decoder() -> decode.Decoder(Uuid) {
   }
 }
 
-pub fn wait_decoder() -> decode.Decoder(WaitRequest) {
+pub fn task_decoder() -> decode.Decoder(TaskRequest) {
   use parsed <- decode.field("for", for_decoder())
   use activity <- decode.field("activity", activity_decoder())
   use data <- decode.optional_field(
@@ -66,7 +66,7 @@ pub fn wait_decoder() -> decode.Decoder(WaitRequest) {
     None,
     json_value.object_decoder() |> decode.map(Some),
   )
-  decode.success(WaitRequest(
+  decode.success(TaskRequest(
     duration: parsed.0,
     raw_for: parsed.1,
     activity: activity,
@@ -81,7 +81,7 @@ pub fn create(req: Request, ctx: Context) -> Response {
     Error(_) -> wisp.unprocessable_content()
     Ok(raw_key) ->
       // The Idempotency-Key must be a UUID v4: a single, URL-safe path segment,
-      // so `GET /wait/{key}` can round-trip it. Store the canonical form so a
+      // so `GET /tasks/{key}` can round-trip it. Store the canonical form so a
       // repeat with different casing still deduplicates.
       case parse_uuid_v4(raw_key) {
         Error(_) -> wisp.unprocessable_content()
@@ -92,12 +92,12 @@ pub fn create(req: Request, ctx: Context) -> Response {
 
 fn create_with_key(req: Request, ctx: Context, key: String) -> Response {
   use body <- wisp.require_json(req)
-  case decode.run(body, wait_decoder()) {
+  case decode.run(body, task_decoder()) {
     Error(_) -> wisp.unprocessable_content()
     Ok(wr) -> {
       let now = timestamp.system_time()
       let row =
-        record.WaitRecord(
+        record.TaskRecord(
           id: uuid.v4(),
           activity: wr.activity,
           idempotency_key: key,
@@ -126,7 +126,7 @@ pub fn read(req: Request, ctx: Context, key: String) -> Response {
   use <- wisp.require_method(req, Get)
 
   // The key is a UUID v4 (enforced on write); a non-v4 path segment cannot
-  // identify any stored wait. Match on the canonical form so casing differences
+  // identify any stored task. Match on the canonical form so casing differences
   // still resolve.
   case parse_uuid_v4(key) {
     Error(_) -> wisp.not_found()
@@ -135,10 +135,10 @@ pub fn read(req: Request, ctx: Context, key: String) -> Response {
 }
 
 fn read_by_key(ctx: Context, key: String) -> Response {
-  case sql.get_wait_by_idempotency_key(ctx.db, key) {
+  case sql.get_task_by_idempotency_key(ctx.db, key) {
     Ok(pog.Returned(_, [row])) ->
       row
-      |> row_to_wait
+      |> row_to_task
       |> view.encode
       |> json.to_string
       |> wisp.json_response(200)
@@ -152,17 +152,17 @@ fn read_by_key(ctx: Context, key: String) -> Response {
 /// service through a schema with a UNIQUE key, a status CHECK, RFC3339
 /// timestamps, and object-or-empty `data`, so the conversions are total against
 /// stored data — hence `let assert`.
-fn row_to_wait(row: sql.GetWaitByIdempotencyKeyRow) -> view.Wait {
+fn row_to_task(row: sql.GetTaskByIdempotencyKeyRow) -> view.Task {
   let assert Ok(id) = uuid.from_string(row.id)
   let assert Ok(activity) = uuid.from_string(row.activity)
-  let assert Ok(wait_status) = status.from_string(row.status)
+  let assert Ok(task_status) = status.from_string(row.status)
   let assert Ok(wait_until) = timestamp.parse_rfc3339(row.wait_until)
   let assert Ok(created_at) = timestamp.parse_rfc3339(row.created_at)
-  view.Wait(
+  view.Task(
     id: id,
     activity: activity,
     idempotency_key: row.idempotency_key,
-    status: wait_status,
+    status: task_status,
     for_duration: row.for_duration,
     wait_until: wait_until,
     created_at: created_at,

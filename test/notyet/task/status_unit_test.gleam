@@ -1,4 +1,4 @@
-import notyet/wait/status
+import notyet/task/status
 
 pub fn to_string_accepted_test() {
   assert status.to_string(status.Accepted) == "accepted"

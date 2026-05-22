@@ -1,6 +1,6 @@
 import gleam/result
 import gleam/time/duration
-import notyet/wait/duration as parser
+import notyet/task/duration as parser
 
 pub fn seconds_singular_test() {
   assert parser.parse("1 second") == Ok(duration.seconds(1))

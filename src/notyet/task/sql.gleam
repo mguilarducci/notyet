@@ -1,5 +1,5 @@
 //// This module contains the code to run the sql queries defined in
-//// `./src/notyet/wait/sql`.
+//// `./src/notyet/task/sql`.
 //// > 🐿️ This module was generated automatically using v4.6.0 of
 //// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
 ////
@@ -7,14 +7,14 @@
 import gleam/dynamic/decode
 import pog
 
-/// A row you get from running the `get_wait_by_idempotency_key` query
-/// defined in `./src/notyet/wait/sql/get_wait_by_idempotency_key.sql`.
+/// A row you get from running the `get_task_by_idempotency_key` query
+/// defined in `./src/notyet/task/sql/get_task_by_idempotency_key.sql`.
 ///
 /// > 🐿️ This type definition was generated automatically using v4.6.0 of the
 /// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
 ///
-pub type GetWaitByIdempotencyKeyRow {
-  GetWaitByIdempotencyKeyRow(
+pub type GetTaskByIdempotencyKeyRow {
+  GetTaskByIdempotencyKeyRow(
     id: String,
     activity: String,
     idempotency_key: String,
@@ -26,16 +26,16 @@ pub type GetWaitByIdempotencyKeyRow {
   )
 }
 
-/// Runs the `get_wait_by_idempotency_key` query
-/// defined in `./src/notyet/wait/sql/get_wait_by_idempotency_key.sql`.
+/// Runs the `get_task_by_idempotency_key` query
+/// defined in `./src/notyet/task/sql/get_task_by_idempotency_key.sql`.
 ///
 /// > 🐿️ This function was generated automatically using v4.6.0 of
 /// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
 ///
-pub fn get_wait_by_idempotency_key(
+pub fn get_task_by_idempotency_key(
   db: pog.Connection,
   arg_1: String,
-) -> Result(pog.Returned(GetWaitByIdempotencyKeyRow), pog.QueryError) {
+) -> Result(pog.Returned(GetTaskByIdempotencyKeyRow), pog.QueryError) {
   let decoder = {
     use id <- decode.field(0, decode.string)
     use activity <- decode.field(1, decode.string)
@@ -45,7 +45,7 @@ pub fn get_wait_by_idempotency_key(
     use wait_until <- decode.field(5, decode.string)
     use created_at <- decode.field(6, decode.string)
     use data <- decode.field(7, decode.string)
-    decode.success(GetWaitByIdempotencyKeyRow(
+    decode.success(GetTaskByIdempotencyKeyRow(
       id:,
       activity:,
       idempotency_key:,
@@ -66,7 +66,7 @@ pub fn get_wait_by_idempotency_key(
   to_char(wait_until AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') AS wait_until,
   to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') AS created_at,
   COALESCE(data::text, '') AS data
-FROM waits
+FROM tasks
 WHERE idempotency_key = $1;
 "
   |> pog.query
@@ -75,13 +75,13 @@ WHERE idempotency_key = $1;
   |> pog.execute(db)
 }
 
-/// Runs the `insert_waits` query
-/// defined in `./src/notyet/wait/sql/insert_waits.sql`.
+/// Runs the `insert_tasks` query
+/// defined in `./src/notyet/task/sql/insert_tasks.sql`.
 ///
 /// > 🐿️ This function was generated automatically using v4.6.0 of
 /// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
 ///
-pub fn insert_waits(
+pub fn insert_tasks(
   db: pog.Connection,
   arg_1: List(String),
   arg_2: List(String),
@@ -93,7 +93,7 @@ pub fn insert_waits(
 ) -> Result(pog.Returned(Nil), pog.QueryError) {
   let decoder = decode.map(decode.dynamic, fn(_) { Nil })
 
-  "INSERT INTO waits (id, activity, idempotency_key, data, for_duration, wait_until, created_at)
+  "INSERT INTO tasks (id, activity, idempotency_key, data, for_duration, wait_until, created_at)
 SELECT i::uuid, a::uuid, k, NULLIF(d, '')::jsonb, f, w::timestamptz, c::timestamptz
 FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[])
   AS t(i, a, k, d, f, w, c)

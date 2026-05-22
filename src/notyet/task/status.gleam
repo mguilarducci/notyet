@@ -1,4 +1,4 @@
-/// Lifecycle state of a wait. `Accepted` is the initial state set at creation
+/// Lifecycle state of a task. `Accepted` is the initial state set at creation
 /// (the `202 Accepted` ack and the persisted row share this name). `Waiting` is
 /// a later state; nothing transitions to it yet (out of scope).
 pub type Status {
