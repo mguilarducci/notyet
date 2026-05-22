@@ -37,15 +37,23 @@ fn for_decoder() -> decode.Decoder(#(Duration, String)) {
   }
 }
 
-/// Decodes "activity" as a strict UUID v4. Non-string, non-UUID, or non-v4 fail.
-fn activity_decoder() -> decode.Decoder(Uuid) {
-  use s <- decode.then(decode.string)
+/// Parse a string as a strict UUID v4. Non-UUID or non-v4 → Error.
+fn parse_uuid_v4(s: String) -> Result(Uuid, Nil) {
   case uuid.from_string(s) {
     Ok(u) ->
       case uuid.version(u) == uuid.V4 {
-        True -> decode.success(u)
-        False -> decode.failure(uuid.v4(), "activity must be a UUID v4")
+        True -> Ok(u)
+        False -> Error(Nil)
       }
+    Error(_) -> Error(Nil)
+  }
+}
+
+/// Decodes "activity" as a strict UUID v4. Non-string, non-UUID, or non-v4 fail.
+fn activity_decoder() -> decode.Decoder(Uuid) {
+  use s <- decode.then(decode.string)
+  case parse_uuid_v4(s) {
+    Ok(u) -> decode.success(u)
     Error(_) -> decode.failure(uuid.v4(), "activity must be a UUID v4")
   }
 }
@@ -71,36 +79,44 @@ pub fn create(req: Request, ctx: Context) -> Response {
 
   case request.get_header(req, idempotency_header) {
     Error(_) -> wisp.unprocessable_content()
-    Ok("") -> wisp.unprocessable_content()
-    Ok(key) -> {
-      use body <- wisp.require_json(req)
-      case decode.run(body, wait_decoder()) {
+    Ok(raw_key) ->
+      // The Idempotency-Key must be a UUID v4: a single, URL-safe path segment,
+      // so `GET /wait/{key}` can round-trip it. Store the canonical form so a
+      // repeat with different casing still deduplicates.
+      case parse_uuid_v4(raw_key) {
         Error(_) -> wisp.unprocessable_content()
-        Ok(wr) -> {
-          let now = timestamp.system_time()
-          let row =
-            record.WaitRecord(
-              id: uuid.v4(),
-              activity: wr.activity,
-              idempotency_key: key,
-              data: wr.data,
-              for_duration: wr.raw_for,
-              wait_until: timestamp.add(now, wr.duration),
-              created_at: now,
-            )
-          case batch.enqueue(ctx.batch, row, ctx.enqueue_timeout_ms) {
-            Ok(_) ->
-              json.object([#("status", json.string(status.to_string(status.Accepted)))])
-              |> json.to_string
-              |> wisp.json_response(202)
-            // Shed: real client demand exceeded admission. 429 + Retry-After
-            // tells the client to back off; the Idempotency-Key makes the
-            // retry safe (it never creates a second row).
-            Error(_) ->
-              wisp.response(429)
-              |> wisp.set_header("retry-after", "1")
-          }
-        }
+        Ok(key_uuid) -> create_with_key(req, ctx, uuid.to_string(key_uuid))
+      }
+  }
+}
+
+fn create_with_key(req: Request, ctx: Context, key: String) -> Response {
+  use body <- wisp.require_json(req)
+  case decode.run(body, wait_decoder()) {
+    Error(_) -> wisp.unprocessable_content()
+    Ok(wr) -> {
+      let now = timestamp.system_time()
+      let row =
+        record.WaitRecord(
+          id: uuid.v4(),
+          activity: wr.activity,
+          idempotency_key: key,
+          data: wr.data,
+          for_duration: wr.raw_for,
+          wait_until: timestamp.add(now, wr.duration),
+          created_at: now,
+        )
+      case batch.enqueue(ctx.batch, row, ctx.enqueue_timeout_ms) {
+        Ok(_) ->
+          json.object([#("status", json.string(status.to_string(status.Accepted)))])
+          |> json.to_string
+          |> wisp.json_response(202)
+        // Shed: real client demand exceeded admission. 429 + Retry-After tells
+        // the client to back off; the Idempotency-Key makes the retry safe (it
+        // never creates a second row).
+        Error(_) ->
+          wisp.response(429)
+          |> wisp.set_header("retry-after", "1")
       }
     }
   }
@@ -109,6 +125,16 @@ pub fn create(req: Request, ctx: Context) -> Response {
 pub fn read(req: Request, ctx: Context, key: String) -> Response {
   use <- wisp.require_method(req, Get)
 
+  // The key is a UUID v4 (enforced on write); a non-v4 path segment cannot
+  // identify any stored wait. Match on the canonical form so casing differences
+  // still resolve.
+  case parse_uuid_v4(key) {
+    Error(_) -> wisp.not_found()
+    Ok(key_uuid) -> read_by_key(ctx, uuid.to_string(key_uuid))
+  }
+}
+
+fn read_by_key(ctx: Context, key: String) -> Response {
   case sql.get_wait_by_idempotency_key(ctx.db, key) {
     Ok(pog.Returned(_, [row])) ->
       row

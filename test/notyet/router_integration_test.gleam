@@ -30,18 +30,18 @@ pub fn get_wait_returns_200_test() {
       db,
       [test_helper.v4],
       [test_helper.v4],
-      ["router-get"],
+      [test_helper.v4],
       [""],
       ["5 minutes"],
       ["2026-05-20T12:00:00Z"],
       ["2026-05-20T12:00:00Z"],
     )
   let response =
-    simulate.request(http.Get, "/wait/router-get")
+    simulate.request(http.Get, "/wait/" <> test_helper.v4)
     |> router.handle_request(ctx)
   assert response.status == 200
   assert test_helper.json_field(simulate.read_body(response), "idempotency_key")
-    == "router-get"
+    == test_helper.v4
 }
 
 pub fn get_wait_missing_returns_404_test() {
@@ -66,7 +66,7 @@ pub fn post_wait_happy_path_test() {
   let response =
     test_helper.keyed_request(
       "{\"for\":\"5 minutes\",\"activity\":\"" <> test_helper.v4 <> "\"}",
-      "router-k1",
+      test_helper.v4,
     )
     |> router.handle_request(ctx)
   assert response.status == 202
