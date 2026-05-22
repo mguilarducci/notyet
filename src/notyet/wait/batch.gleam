@@ -5,7 +5,6 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 import gleam/otp/supervision
-import gleam/set
 import gleam/string
 import gleam/time/calendar
 import gleam/time/timestamp
@@ -40,7 +39,7 @@ pub type Config {
 
 /// The batch insert, injectable so tests can supply a blocking insert to drive
 /// the shed / in-flight / pipelining paths deterministically. Production uses
-/// `do_insert`. The return type must match `sql.insert_waits` (see Step 2).
+/// `do_insert`. The return type must match `sql.insert_waits`.
 type Insert =
   fn(pog.Connection, List(WaitRecord)) ->
     Result(pog.Returned(Nil), pog.QueryError)
@@ -192,7 +191,11 @@ fn flush(state: State) -> actor.Next(State, Message) {
   case state.pending {
     [] -> actor.continue(State(..state, count: 0, timer: None))
     pending -> {
-      let records = list.reverse(pending) |> dedup_by_key
+      // The buffer goes to the insert as-is: order is irrelevant (no RETURNING
+      // mapping) and intra-batch duplicate keys are absorbed by `ON CONFLICT DO
+      // NOTHING`, so neither a reverse nor an app-side dedup is needed on the
+      // (serialized) actor loop.
+      let records = pending
       let insert = state.insert
       let db = state.db
       // Spawn off the actor loop so the actor keeps accepting enqueues while the
@@ -223,20 +226,6 @@ fn flush(state: State) -> actor.Next(State, Message) {
       )
     }
   }
-}
-
-/// Keep the first record per idempotency_key (belt-and-suspenders; `DO NOTHING`
-/// tolerates intra-batch duplicates, but de-duping keeps each batch minimal).
-fn dedup_by_key(records: List(WaitRecord)) -> List(WaitRecord) {
-  let #(kept, _) =
-    list.fold(records, #([], set.new()), fn(acc, r) {
-      let #(kept, seen) = acc
-      case set.contains(seen, r.idempotency_key) {
-        True -> acc
-        False -> #([r, ..kept], set.insert(seen, r.idempotency_key))
-      }
-    })
-  list.reverse(kept)
 }
 
 fn cancel_timer(timer: Option(Timer)) -> Nil {
