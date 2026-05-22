@@ -1,5 +1,7 @@
+import gleam/dynamic/decode
 import gleam/http
 import gleam/http/request
+import gleam/json
 import notyet/wait
 import notyet/wait/sql
 import test_helper
@@ -150,4 +152,24 @@ pub fn retry_same_key_persists_once_test() {
   assert first.status == 202
   assert second.status == 202
   assert test_helper.eventually_count(db, 1, 2000) == 1
+}
+
+pub fn read_returns_data_object_test() {
+  use db <- test_helper.with_db
+  seed(db, "with-data")
+  let response =
+    simulate.request(http.Get, "/wait/with-data")
+    |> wait.read(ctx(db), "with-data")
+  assert response.status == 200
+  let body = simulate.read_body(response)
+  let assert Ok(k) = json.parse(body, decode.at(["data", "k"], decode.int))
+  assert k == 1
+}
+
+pub fn read_wrong_method_returns_405_test() {
+  use db <- test_helper.with_db
+  let response =
+    simulate.request(http.Post, "/wait/whatever")
+    |> wait.read(ctx(db), "whatever")
+  assert response.status == 405
 }
