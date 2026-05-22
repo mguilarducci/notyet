@@ -56,6 +56,49 @@ pub fn empty_list_no_op_test() {
   assert test_helper.count_waits(db) == 0
 }
 
+pub fn get_by_key_returns_inserted_row_test() {
+  use db <- test_helper.with_db
+  let assert Ok(_) =
+    sql.insert_waits(
+      db,
+      [v4_a],
+      [v4_b],
+      ["look-me-up"],
+      ["{\"k\":1}"],
+      ["5 minutes"],
+      [ts],
+      [ts],
+    )
+  let assert Ok(pog.Returned(count, [row])) =
+    sql.get_wait_by_idempotency_key(db, "look-me-up")
+  assert count == 1
+  assert row.id == v4_a
+  assert row.activity == v4_b
+  assert row.idempotency_key == "look-me-up"
+  assert row.status == "accepted"
+  assert row.for_duration == "5 minutes"
+  // Postgres re-serializes jsonb with a space after the colon: {"k":1} -> {"k": 1}.
+  assert row.data == "{\"k\": 1}"
+}
+
+pub fn get_by_key_missing_returns_empty_test() {
+  use db <- test_helper.with_db
+  let assert Ok(pog.Returned(count, rows)) =
+    sql.get_wait_by_idempotency_key(db, "nope")
+  assert count == 0
+  assert rows == []
+}
+
+pub fn get_by_key_null_data_test() {
+  use db <- test_helper.with_db
+  let assert Ok(_) =
+    sql.insert_waits(db, [v4_a], [v4_a], ["no-data"], [""], ["1 day"], [ts], [ts])
+  let assert Ok(pog.Returned(_, [row])) =
+    sql.get_wait_by_idempotency_key(db, "no-data")
+  // COALESCE(data::text, '') maps SQL NULL to empty string.
+  assert row.data == ""
+}
+
 // DO NOTHING: a repeated key across calls inserts no second row, no error.
 pub fn same_key_dedups_to_one_row_test() {
   use db <- test_helper.with_db
