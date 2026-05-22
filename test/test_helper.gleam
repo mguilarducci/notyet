@@ -14,6 +14,8 @@ import wisp/simulate
 
 pub const v4 = "f47ac10b-58cc-4372-a567-0e02b2c3d479"
 
+pub const v4_b = "c9bf9e57-1685-4c89-bafb-ff5af830be8a"
+
 pub const v7 = "018f6f6e-7000-7000-8000-000000000000"
 
 // Each call allocates a fresh atom via process.new_name. At ~100+ integration
@@ -97,6 +99,7 @@ pub fn writer_ctx(
   max_in_flight: Int,
 ) -> web.Context {
   web.Context(
+    db: db,
     batch: start_writer(db, max_size, interval_ms, max_in_flight),
     enqueue_timeout_ms: 1000,
   )

@@ -1,9 +1,14 @@
 import gleam/erlang/process
 import notyet/wait/batch
+import pog
 import wisp
 
 pub type Context {
-  Context(batch: process.Subject(batch.Message), enqueue_timeout_ms: Int)
+  Context(
+    db: pog.Connection,
+    batch: process.Subject(batch.Message),
+    enqueue_timeout_ms: Int,
+  )
 }
 
 pub fn middleware(

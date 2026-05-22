@@ -20,8 +20,22 @@ main(_) ->
     Beams = filelib:wildcard(?EBIN "/*.beam"),
     {SrcBeams, TestMods} = classify(Beams),
 
+    %% A stale-beam skip or a mis-mapped layout could leave no test modules to
+    %% run; eunit:test([]) returns `ok`, which would report a vacuous pass.
+    case TestMods of
+        [] -> halt_with("no test modules found", 1);
+        _ -> ok
+    end,
+
     {ok, _} = cover:start(),
     [cover_compile(B) || B <- SrcBeams],
+
+    %% DB-backed tests run real queries through pgo, whose query-cache ETS table
+    %% is created by the pgo *application* start (pgo_app -> pgo_query_cache).
+    %% `gleam test` boots the app tree; this escript runs EUnit directly, so we
+    %% must start pgo ourselves or every DB query crashes with a `badarg` ETS
+    %% lookup on a missing `pgo_query_cache` table.
+    {ok, _} = application:ensure_all_started(pgo),
 
     case eunit:test(TestMods, [verbose]) of
         ok -> ok;
@@ -44,14 +58,43 @@ classify(Beams) ->
         fun(Beam, {Src, Tests}) ->
             Name = beam_name(Beam),
             case classify_name(Name) of
-                src -> {[Beam | Src], Tests};
-                test -> {Src, [list_to_atom(Name) | Tests]};
+                src ->
+                    %% A module that looks like source but whose .gleam lives
+                    %% outside src/ (e.g. test/test_helper.gleam) is test
+                    %% support, not application code — don't measure it.
+                    case src_source_exists(Name) of
+                        true -> {[Beam | Src], Tests};
+                        false -> {Src, Tests}
+                    end;
+                test ->
+                    %% `gleam test` compiles from source and ignores orphaned
+                    %% beams, but this escript globs `ebin/*.beam` and would run
+                    %% a stale `_test` beam whose `.gleam` source was deleted —
+                    %% calling functions that no longer exist (`undef`). Only run
+                    %% a test module whose source still exists.
+                    case test_source_exists(Name) of
+                        true -> {Src, [list_to_atom(Name) | Tests]};
+                        false ->
+                            io:format("cover: skipping stale test beam ~s "
+                                      "(no .gleam source)~n", [Name]),
+                            {Src, Tests}
+                    end;
                 skip -> {Src, Tests}
             end
         end,
         {[], []},
         Beams
     ).
+
+%% Gleam test module `a@b@c_test` maps to source `test/a/b/c_test.gleam`.
+test_source_exists(Name) ->
+    Rel = lists:flatten(string:replace(Name, "@", "/", all)),
+    filelib:is_regular("test/" ++ Rel ++ ".gleam").
+
+%% Gleam module `a@b@c` maps to source `src/a/b/c.gleam`.
+src_source_exists(Name) ->
+    Rel = lists:flatten(string:replace(Name, "@", "/", all)),
+    filelib:is_regular("src/" ++ Rel ++ ".gleam").
 
 classify_name(?APP "_test") -> skip;
 classify_name(Name) ->

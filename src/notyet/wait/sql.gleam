@@ -7,6 +7,74 @@
 import gleam/dynamic/decode
 import pog
 
+/// A row you get from running the `get_wait_by_idempotency_key` query
+/// defined in `./src/notyet/wait/sql/get_wait_by_idempotency_key.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.6.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type GetWaitByIdempotencyKeyRow {
+  GetWaitByIdempotencyKeyRow(
+    id: String,
+    activity: String,
+    idempotency_key: String,
+    status: String,
+    for_duration: String,
+    wait_until: String,
+    created_at: String,
+    data: String,
+  )
+}
+
+/// Runs the `get_wait_by_idempotency_key` query
+/// defined in `./src/notyet/wait/sql/get_wait_by_idempotency_key.sql`.
+///
+/// > 🐿️ This function was generated automatically using v4.6.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn get_wait_by_idempotency_key(
+  db: pog.Connection,
+  arg_1: String,
+) -> Result(pog.Returned(GetWaitByIdempotencyKeyRow), pog.QueryError) {
+  let decoder = {
+    use id <- decode.field(0, decode.string)
+    use activity <- decode.field(1, decode.string)
+    use idempotency_key <- decode.field(2, decode.string)
+    use status <- decode.field(3, decode.string)
+    use for_duration <- decode.field(4, decode.string)
+    use wait_until <- decode.field(5, decode.string)
+    use created_at <- decode.field(6, decode.string)
+    use data <- decode.field(7, decode.string)
+    decode.success(GetWaitByIdempotencyKeyRow(
+      id:,
+      activity:,
+      idempotency_key:,
+      status:,
+      for_duration:,
+      wait_until:,
+      created_at:,
+      data:,
+    ))
+  }
+
+  "SELECT
+  id::text,
+  activity::text,
+  idempotency_key,
+  status,
+  for_duration,
+  to_char(wait_until AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') AS wait_until,
+  to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') AS created_at,
+  COALESCE(data::text, '') AS data
+FROM waits
+WHERE idempotency_key = $1;
+"
+  |> pog.query
+  |> pog.parameter(pog.text(arg_1))
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
 /// Runs the `insert_waits` query
 /// defined in `./src/notyet/wait/sql/insert_waits.sql`.
 ///
