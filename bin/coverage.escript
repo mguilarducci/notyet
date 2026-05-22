@@ -20,6 +20,13 @@ main(_) ->
     Beams = filelib:wildcard(?EBIN "/*.beam"),
     {SrcBeams, TestMods} = classify(Beams),
 
+    %% A stale-beam skip or a mis-mapped layout could leave no test modules to
+    %% run; eunit:test([]) returns `ok`, which would report a vacuous pass.
+    case TestMods of
+        [] -> halt_with("no test modules found", 1);
+        _ -> ok
+    end,
+
     {ok, _} = cover:start(),
     [cover_compile(B) || B <- SrcBeams],
 
@@ -51,7 +58,14 @@ classify(Beams) ->
         fun(Beam, {Src, Tests}) ->
             Name = beam_name(Beam),
             case classify_name(Name) of
-                src -> {[Beam | Src], Tests};
+                src ->
+                    %% A module that looks like source but whose .gleam lives
+                    %% outside src/ (e.g. test/test_helper.gleam) is test
+                    %% support, not application code — don't measure it.
+                    case src_source_exists(Name) of
+                        true -> {[Beam | Src], Tests};
+                        false -> {Src, Tests}
+                    end;
                 test ->
                     %% `gleam test` compiles from source and ignores orphaned
                     %% beams, but this escript globs `ebin/*.beam` and would run
@@ -76,6 +90,11 @@ classify(Beams) ->
 test_source_exists(Name) ->
     Rel = lists:flatten(string:replace(Name, "@", "/", all)),
     filelib:is_regular("test/" ++ Rel ++ ".gleam").
+
+%% Gleam module `a@b@c` maps to source `src/a/b/c.gleam`.
+src_source_exists(Name) ->
+    Rel = lists:flatten(string:replace(Name, "@", "/", all)),
+    filelib:is_regular("src/" ++ Rel ++ ".gleam").
 
 classify_name(?APP "_test") -> skip;
 classify_name(Name) ->
