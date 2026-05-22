@@ -1,0 +1,6 @@
+[database]
+# Falls back to the DATABASE_URL environment variable.
+
+[migration-table]
+
+[migrations]

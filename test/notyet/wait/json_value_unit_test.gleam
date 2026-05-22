@@ -119,3 +119,60 @@ pub fn null_decoder_rejects_nonnull_test() {
     as "test payload must be valid JSON"
   assert decode.run(dyn, json_value.null_decoder()) |> result.is_error
 }
+
+// Round-trip: encode then re-decode must equal the original ADT value.
+fn round_trip(value: json_value.JsonValue) -> json_value.JsonValue {
+  let assert Ok(decoded) =
+    value
+    |> json_value.encode
+    |> json.to_string
+    |> json.parse(json_value.decoder())
+  decoded
+}
+
+pub fn encode_string_test() {
+  let v = JString("hi")
+  assert round_trip(v) == v
+}
+
+pub fn encode_int_test() {
+  let v = JInt(42)
+  assert round_trip(v) == v
+}
+
+pub fn encode_float_test() {
+  let v = JFloat(3.5)
+  assert round_trip(v) == v
+}
+
+pub fn encode_bool_true_test() {
+  assert round_trip(JBool(True)) == JBool(True)
+}
+
+pub fn encode_bool_false_test() {
+  assert round_trip(JBool(False)) == JBool(False)
+}
+
+pub fn encode_null_test() {
+  assert round_trip(JNull) == JNull
+}
+
+pub fn encode_empty_object_test() {
+  let v = JObject(dict.new())
+  assert round_trip(v) == v
+}
+
+pub fn encode_empty_array_test() {
+  assert round_trip(JArray([])) == JArray([])
+}
+
+pub fn encode_nested_test() {
+  let v =
+    JObject(
+      dict.from_list([
+        #("abc", JInt(1)),
+        #("xyz", JArray([JObject(dict.from_list([#("asd", JBool(False))]))])),
+      ]),
+    )
+  assert round_trip(v) == v
+}

@@ -1,0 +1,10 @@
+build/
+.git/
+.github/
+.claude/
+.remember/
+docs/
+*.beam
+*.ez
+erl_crash.dump
+.env

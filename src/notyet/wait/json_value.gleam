@@ -1,5 +1,7 @@
 import gleam/dict
 import gleam/dynamic/decode
+import gleam/json
+import gleam/list
 import gleam/option
 
 /// A fully-decoded representation of any JSON value. Re-serializable in
@@ -17,7 +19,28 @@ pub type JsonValue {
   JNull
 }
 
+/// Serialize a `JsonValue` back to `gleam_json`. Inverse of `decoder()`:
+/// `encode |> json.to_string |> json.parse(decoder())` round-trips losslessly.
+pub fn encode(value: JsonValue) -> json.Json {
+  case value {
+    JObject(entries) ->
+      entries
+      |> dict.to_list
+      |> list.map(fn(pair) { #(pair.0, encode(pair.1)) })
+      |> json.object
+    JArray(items) -> json.array(items, encode)
+    JString(s) -> json.string(s)
+    JInt(i) -> json.int(i)
+    JFloat(f) -> json.float(f)
+    JBool(b) -> json.bool(b)
+    JNull -> json.null()
+  }
+}
+
 /// Decode any JSON value into a `JsonValue`. Used for nested values.
+///
+/// Branch order matters: `int` before `float` (so `5` is `JInt`, not `JFloat`)
+/// and object before `list`. Reordering would change which variant wins.
 pub fn decoder() -> decode.Decoder(JsonValue) {
   use <- decode.recursive
   decode.one_of(decode.bool |> decode.map(JBool), [
