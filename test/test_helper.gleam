@@ -97,6 +97,7 @@ pub fn writer_ctx(
   max_in_flight: Int,
 ) -> web.Context {
   web.Context(
+    db: db,
     batch: start_writer(db, max_size, interval_ms, max_in_flight),
     enqueue_timeout_ms: 1000,
   )

@@ -52,7 +52,11 @@ pub fn main() -> Nil {
 
   let batch_subject = process.named_subject(batch_name)
   let ctx =
-    web.Context(batch: batch_subject, enqueue_timeout_ms: enqueue_timeout_ms)
+    web.Context(
+      db: db,
+      batch: batch_subject,
+      enqueue_timeout_ms: enqueue_timeout_ms,
+    )
 
   let assert Ok(_) =
     router.handle_request(_, ctx)
