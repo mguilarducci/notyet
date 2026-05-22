@@ -44,3 +44,8 @@ pub fn encode_status_delivered_test() {
   let body = json.to_string(view.encode(delivered))
   assert test_helper.json_field(body, "status") == "delivered"
 }
+
+pub fn encode_omits_visible_at_test() {
+  let body = json.to_string(view.encode(sample()))
+  assert test_helper.json_field_missing(body, "visible_at")
+}

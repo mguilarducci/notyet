@@ -1,8 +1,8 @@
-/// Lifecycle state of a task. `Pending` is the initial state set at creation
-/// (the row's `visible_at` is still in the future). The remaining states are
-/// produced by the delivery worker (later phase): `Delivering` while the
-/// `destination` call is in flight, then the terminal `Delivered` (HTTP 2xx) or
-/// `Failed`. Nothing transitions out of `Pending` yet (out of scope).
+/// Lifecycle state of a task. `Pending` is the initial state set at creation.
+/// The remaining states are produced by the delivery worker (later phase):
+/// `Delivering` while the `destination` call is in flight, then the terminal
+/// `Delivered` (HTTP 2xx) or `Failed`. Nothing transitions out of `Pending`
+/// yet (out of scope).
 pub type Status {
   Pending
   Delivering

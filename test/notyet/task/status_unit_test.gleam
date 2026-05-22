@@ -45,3 +45,13 @@ pub fn round_trip_delivered_test() {
   assert status.from_string(status.to_string(status.Delivered))
     == Ok(status.Delivered)
 }
+
+pub fn round_trip_delivering_test() {
+  assert status.from_string(status.to_string(status.Delivering))
+    == Ok(status.Delivering)
+}
+
+pub fn round_trip_failed_test() {
+  assert status.from_string(status.to_string(status.Failed))
+    == Ok(status.Failed)
+}

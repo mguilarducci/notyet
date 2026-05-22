@@ -1,5 +1,6 @@
 import envoy
 import gleam/dynamic/decode
+import gleam/option.{None, Some}
 import gleam/erlang/process
 import gleam/http
 import gleam/http/request
@@ -139,4 +140,17 @@ pub fn json_field(body: String, field: String) -> String {
       decode.success(v)
     })
   value
+}
+
+pub fn json_field_missing(body: String, field: String) -> Bool {
+  let result =
+    json.parse(body, {
+      use v <- decode.field(field, decode.optional(decode.string))
+      decode.success(v)
+    })
+  case result {
+    Ok(Some(_)) -> False
+    Ok(None) -> True
+    Error(_) -> True
+  }
 }
