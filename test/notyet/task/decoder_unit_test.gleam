@@ -2,7 +2,6 @@ import gleam/dynamic/decode
 import gleam/json
 import gleam/result
 import gleam/time/duration
-import gleeunit/should
 import notyet/task
 
 fn decode_json(
@@ -71,37 +70,40 @@ pub fn bad_wait_for_string_test() {
 }
 
 pub fn destination_valid_http_test() {
-  decode_json("{\"wait_for\":\"5 minutes\",\"destination\":\"http://example.com/cb\"}")
+  assert decode_json(
+    "{\"wait_for\":\"5 minutes\",\"destination\":\"http://example.com/cb\"}",
+  )
   |> result.is_ok
-  |> should.be_true
 }
 
 pub fn destination_valid_https_test() {
-  decode_json("{\"wait_for\":\"5 minutes\",\"destination\":\"https://example.com/cb\"}")
+  assert decode_json(
+    "{\"wait_for\":\"5 minutes\",\"destination\":\"https://example.com/cb\"}",
+  )
   |> result.is_ok
-  |> should.be_true
 }
 
 pub fn destination_rejects_non_http_scheme_test() {
-  decode_json("{\"wait_for\":\"5 minutes\",\"destination\":\"ftp://example.com\"}")
+  assert decode_json(
+    "{\"wait_for\":\"5 minutes\",\"destination\":\"ftp://example.com\"}",
+  )
   |> result.is_error
-  |> should.be_true
 }
 
-pub fn destination_rejects_missing_host_test() {
-  decode_json("{\"wait_for\":\"5 minutes\",\"destination\":\"http:///path\"}")
+pub fn destination_rejects_empty_host_test() {
+  assert decode_json(
+    "{\"wait_for\":\"5 minutes\",\"destination\":\"http:///path\"}",
+  )
   |> result.is_error
-  |> should.be_true
 }
 
 pub fn destination_rejects_garbage_test() {
-  decode_json("{\"wait_for\":\"5 minutes\",\"destination\":\"not a url\"}")
+  assert decode_json(
+    "{\"wait_for\":\"5 minutes\",\"destination\":\"not a url\"}",
+  )
   |> result.is_error
-  |> should.be_true
 }
 
 pub fn destination_required_test() {
-  decode_json("{\"wait_for\":\"5 minutes\"}")
-  |> result.is_error
-  |> should.be_true
+  assert decode_json("{\"wait_for\":\"5 minutes\"}") |> result.is_error
 }

@@ -51,11 +51,8 @@ fn parse_http_url(s: String) -> Result(String, Nil) {
     Error(_) -> Error(Nil)
     Ok(parsed) ->
       case parsed.scheme, parsed.host {
-        Some("http"), Some(host) | Some("https"), Some(host) ->
-          case host {
-            "" -> Error(Nil)
-            _ -> Ok(s)
-          }
+        Some("http"), Some("") | Some("https"), Some("") -> Error(Nil)
+        Some("http"), Some(_) | Some("https"), Some(_) -> Ok(s)
         _, _ -> Error(Nil)
       }
   }
