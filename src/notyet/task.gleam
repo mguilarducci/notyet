@@ -98,18 +98,20 @@ fn create_with_key(req: Request, ctx: Context, key: String) -> Response {
     Error(_) -> wisp.unprocessable_content()
     Ok(tr) -> {
       let now = timestamp.system_time()
+      let wait_until = timestamp.add(now, tr.duration)
       let row =
         record.TaskRecord(
           id: uuid.v4(),
           idempotency_key: key,
           wait_for: tr.raw_wait_for,
           destination: tr.destination,
-          wait_until: timestamp.add(now, tr.duration),
+          visible_at: wait_until,
+          wait_until: wait_until,
           created_at: now,
         )
       case batch.enqueue(ctx.batch, row, ctx.enqueue_timeout_ms) {
         Ok(_) ->
-          json.object([#("status", json.string(status.to_string(status.Accepted)))])
+          json.object([#("status", json.string(status.to_string(status.Pending)))])
           |> json.to_string
           |> wisp.json_response(202)
         // Shed: real client demand exceeded admission. 429 + Retry-After tells

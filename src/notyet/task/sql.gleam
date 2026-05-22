@@ -85,13 +85,14 @@ pub fn insert_tasks(
   arg_4: List(String),
   arg_5: List(String),
   arg_6: List(String),
+  arg_7: List(String),
 ) -> Result(pog.Returned(Nil), pog.QueryError) {
   let decoder = decode.map(decode.dynamic, fn(_) { Nil })
 
-  "INSERT INTO tasks (id, idempotency_key, wait_for, destination, wait_until, created_at)
-SELECT i::uuid, k, f, dest, w::timestamptz, c::timestamptz
-FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[])
-  AS t(i, k, f, dest, w, c)
+  "INSERT INTO tasks (id, idempotency_key, wait_for, destination, visible_at, wait_until, created_at)
+SELECT i::uuid, k, f, dest, v::timestamptz, w::timestamptz, c::timestamptz
+FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[])
+  AS t(i, k, f, dest, v, w, c)
 ON CONFLICT (idempotency_key) DO NOTHING;
 "
   |> pog.query
@@ -101,6 +102,7 @@ ON CONFLICT (idempotency_key) DO NOTHING;
   |> pog.parameter(pog.array(fn(value) { pog.text(value) }, arg_4))
   |> pog.parameter(pog.array(fn(value) { pog.text(value) }, arg_5))
   |> pog.parameter(pog.array(fn(value) { pog.text(value) }, arg_6))
+  |> pog.parameter(pog.array(fn(value) { pog.text(value) }, arg_7))
   |> pog.returning(decoder)
   |> pog.execute(db)
 }

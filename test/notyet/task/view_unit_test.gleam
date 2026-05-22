@@ -12,7 +12,7 @@ fn sample() -> view.Task {
   view.Task(
     id: id,
     idempotency_key: "k-1",
-    status: status.Accepted,
+    status: status.Pending,
     wait_for: "5 minutes",
     wait_until: timestamp.from_unix_seconds(1_000_000),
     created_at: timestamp.from_unix_seconds(900_000),
@@ -24,7 +24,7 @@ pub fn encode_includes_core_fields_test() {
   let body = json.to_string(view.encode(sample()))
   assert test_helper.json_field(body, "id") == id_str
   assert test_helper.json_field(body, "idempotency_key") == "k-1"
-  assert test_helper.json_field(body, "status") == "accepted"
+  assert test_helper.json_field(body, "status") == "pending"
   assert test_helper.json_field(body, "wait_for") == "5 minutes"
   assert test_helper.json_field(body, "destination") == "https://example.com/cb"
 }
@@ -39,8 +39,8 @@ pub fn encode_timestamps_are_rfc3339_utc_test() {
   assert ca == timestamp.from_unix_seconds(900_000)
 }
 
-pub fn encode_status_waiting_test() {
-  let waiting = view.Task(..sample(), status: status.Waiting)
-  let body = json.to_string(view.encode(waiting))
-  assert test_helper.json_field(body, "status") == "waiting"
+pub fn encode_status_delivered_test() {
+  let delivered = view.Task(..sample(), status: status.Delivered)
+  let body = json.to_string(view.encode(delivered))
+  assert test_helper.json_field(body, "status") == "delivered"
 }

@@ -36,6 +36,7 @@ pub fn get_task_returns_200_test() {
       [dest],
       ["2026-05-20T12:00:00Z"],
       ["2026-05-20T12:00:00Z"],
+      ["2026-05-20T12:00:00Z"],
     )
   let response =
     simulate.request(http.Get, "/tasks/" <> test_helper.v4)
@@ -73,7 +74,7 @@ pub fn post_task_happy_path_test() {
     |> router.handle_request(ctx)
   assert response.status == 202
   assert test_helper.json_field(simulate.read_body(response), "status")
-    == "accepted"
+    == "pending"
   assert test_helper.eventually_count(db, 1, 2000) == 1
 }
 

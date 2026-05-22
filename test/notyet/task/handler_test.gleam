@@ -21,7 +21,7 @@ pub fn create_accepts_and_persists_test() {
     |> task.create(ctx(db))
   assert response.status == 202
   assert test_helper.json_field(simulate.read_body(response), "status")
-    == "accepted"
+    == "pending"
   assert test_helper.eventually_count(db, 1, 2000) == 1
 }
 
@@ -97,6 +97,7 @@ fn seed(db, key) {
       [dest],
       ["2026-05-20T12:00:00Z"],
       ["2026-05-20T12:00:00Z"],
+      ["2026-05-20T12:00:00Z"],
     )
   Nil
 }
@@ -110,7 +111,7 @@ pub fn read_returns_200_with_resource_test() {
   assert response.status == 200
   let body = simulate.read_body(response)
   assert test_helper.json_field(body, "idempotency_key") == test_helper.v4
-  assert test_helper.json_field(body, "status") == "accepted"
+  assert test_helper.json_field(body, "status") == "pending"
   assert test_helper.json_field(body, "wait_for") == "5 minutes"
   assert test_helper.json_field(body, "destination") == dest
 }

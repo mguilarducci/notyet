@@ -1,22 +1,30 @@
-/// Lifecycle state of a task. `Accepted` is the initial state set at creation
-/// (the `202 Accepted` ack and the persisted row share this name). `Waiting` is
-/// a later state; nothing transitions to it yet (out of scope).
+/// Lifecycle state of a task. `Pending` is the initial state set at creation
+/// (the row's `visible_at` is still in the future). The remaining states are
+/// produced by the delivery worker (later phase): `Delivering` while the
+/// `destination` call is in flight, then the terminal `Delivered` (HTTP 2xx) or
+/// `Failed`. Nothing transitions out of `Pending` yet (out of scope).
 pub type Status {
-  Accepted
-  Waiting
+  Pending
+  Delivering
+  Delivered
+  Failed
 }
 
 pub fn to_string(status: Status) -> String {
   case status {
-    Accepted -> "accepted"
-    Waiting -> "waiting"
+    Pending -> "pending"
+    Delivering -> "delivering"
+    Delivered -> "delivered"
+    Failed -> "failed"
   }
 }
 
 pub fn from_string(value: String) -> Result(Status, Nil) {
   case value {
-    "accepted" -> Ok(Accepted)
-    "waiting" -> Ok(Waiting)
+    "pending" -> Ok(Pending)
+    "delivering" -> Ok(Delivering)
+    "delivered" -> Ok(Delivered)
+    "failed" -> Ok(Failed)
     _ -> Error(Nil)
   }
 }
