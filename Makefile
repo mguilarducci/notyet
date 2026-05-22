@@ -2,7 +2,7 @@ SHELL := /bin/bash
 include .env
 export
 
-.PHONY: help db-up db-down db-logs migrate migrate-new migrate-rollback migrate-status sqlgen sqlcheck run test build deps
+.PHONY: help db-up db-down db-logs migrate migrate-new migrate-rollback migrate-status sqlgen sqlcheck run test coverage build deps
 
 help:
 	@echo "db-up            Start Postgres in Docker"
@@ -16,6 +16,7 @@ help:
 	@echo "sqlcheck         Verify generated SQL is up to date"
 	@echo "run              Run the app"
 	@echo "test             Run tests"
+	@echo "coverage         Run tests under cover, print coverage summary"
 	@echo "build            Build the project"
 	@echo "deps             Fetch deps"
 
@@ -51,6 +52,9 @@ run:
 
 test:
 	gleam test
+
+coverage:
+	./bin/coverage
 
 build:
 	gleam build

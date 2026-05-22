@@ -23,6 +23,13 @@ main(_) ->
     {ok, _} = cover:start(),
     [cover_compile(B) || B <- SrcBeams],
 
+    %% DB-backed tests run real queries through pgo, whose query-cache ETS table
+    %% is created by the pgo *application* start (pgo_app -> pgo_query_cache).
+    %% `gleam test` boots the app tree; this escript runs EUnit directly, so we
+    %% must start pgo ourselves or every DB query crashes with a `badarg` ETS
+    %% lookup on a missing `pgo_query_cache` table.
+    {ok, _} = application:ensure_all_started(pgo),
+
     case eunit:test(TestMods, [verbose]) of
         ok -> ok;
         error -> halt_with("tests failed", 1)
@@ -45,13 +52,30 @@ classify(Beams) ->
             Name = beam_name(Beam),
             case classify_name(Name) of
                 src -> {[Beam | Src], Tests};
-                test -> {Src, [list_to_atom(Name) | Tests]};
+                test ->
+                    %% `gleam test` compiles from source and ignores orphaned
+                    %% beams, but this escript globs `ebin/*.beam` and would run
+                    %% a stale `_test` beam whose `.gleam` source was deleted —
+                    %% calling functions that no longer exist (`undef`). Only run
+                    %% a test module whose source still exists.
+                    case test_source_exists(Name) of
+                        true -> {Src, [list_to_atom(Name) | Tests]};
+                        false ->
+                            io:format("cover: skipping stale test beam ~s "
+                                      "(no .gleam source)~n", [Name]),
+                            {Src, Tests}
+                    end;
                 skip -> {Src, Tests}
             end
         end,
         {[], []},
         Beams
     ).
+
+%% Gleam test module `a@b@c_test` maps to source `test/a/b/c_test.gleam`.
+test_source_exists(Name) ->
+    Rel = lists:flatten(string:replace(Name, "@", "/", all)),
+    filelib:is_regular("test/" ++ Rel ++ ".gleam").
 
 classify_name(?APP "_test") -> skip;
 classify_name(Name) ->
