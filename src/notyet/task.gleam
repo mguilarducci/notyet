@@ -2,8 +2,10 @@ import gleam/dynamic/decode
 import gleam/http.{Get, Post}
 import gleam/http/request
 import gleam/json
+import gleam/option.{Some}
 import gleam/time/duration.{type Duration}
 import gleam/time/timestamp
+import gleam/uri
 import notyet/task/batch
 import notyet/task/duration as duration_parser
 import notyet/task/record
@@ -18,7 +20,7 @@ import youid/uuid.{type Uuid}
 const idempotency_header = "idempotency-key"
 
 pub type TaskRequest {
-  TaskRequest(duration: Duration, raw_wait_for: String)
+  TaskRequest(duration: Duration, raw_wait_for: String, destination: String)
 }
 
 /// Decodes the "wait_for" field into both the parsed duration and its raw string.
@@ -42,9 +44,39 @@ fn parse_uuid_v4(s: String) -> Result(Uuid, Nil) {
   }
 }
 
+/// Validate a destination as an http/https URL: parseable, scheme http|https,
+/// non-empty host. Stores the raw string (no normalization).
+fn parse_http_url(s: String) -> Result(String, Nil) {
+  case uri.parse(s) {
+    Error(_) -> Error(Nil)
+    Ok(parsed) ->
+      case parsed.scheme, parsed.host {
+        Some("http"), Some(host) | Some("https"), Some(host) ->
+          case host {
+            "" -> Error(Nil)
+            _ -> Ok(s)
+          }
+        _, _ -> Error(Nil)
+      }
+  }
+}
+
+fn destination_decoder() -> decode.Decoder(String) {
+  use s <- decode.then(decode.string)
+  case parse_http_url(s) {
+    Ok(url) -> decode.success(url)
+    Error(_) -> decode.failure("", "destination must be an http(s) URL")
+  }
+}
+
 pub fn task_decoder() -> decode.Decoder(TaskRequest) {
   use parsed <- decode.field("wait_for", wait_for_decoder())
-  decode.success(TaskRequest(duration: parsed.0, raw_wait_for: parsed.1))
+  use destination <- decode.field("destination", destination_decoder())
+  decode.success(TaskRequest(
+    duration: parsed.0,
+    raw_wait_for: parsed.1,
+    destination: destination,
+  ))
 }
 
 pub fn create(req: Request, ctx: Context) -> Response {
@@ -74,6 +106,7 @@ fn create_with_key(req: Request, ctx: Context, key: String) -> Response {
           id: uuid.v4(),
           idempotency_key: key,
           wait_for: tr.raw_wait_for,
+          destination: tr.destination,
           wait_until: timestamp.add(now, tr.duration),
           created_at: now,
         )
@@ -134,5 +167,6 @@ fn row_to_task(row: sql.GetTaskByIdempotencyKeyRow) -> view.Task {
     wait_for: row.wait_for,
     wait_until: wait_until,
     created_at: created_at,
+    destination: row.destination,
   )
 }

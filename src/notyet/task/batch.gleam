@@ -243,9 +243,10 @@ fn do_insert(
   let ids = list.map(records, fn(r) { uuid.to_string(r.id) })
   let keys = list.map(records, fn(r) { r.idempotency_key })
   let wait_fors = list.map(records, fn(r) { r.wait_for })
+  let dests = list.map(records, fn(r) { r.destination })
   let untils = list.map(records, fn(r) { rfc3339(r.wait_until) })
   let createds = list.map(records, fn(r) { rfc3339(r.created_at) })
-  sql.insert_tasks(db, ids, keys, wait_fors, untils, createds)
+  sql.insert_tasks(db, ids, keys, wait_fors, dests, untils, createds)
 }
 
 fn rfc3339(t: timestamp.Timestamp) -> String {

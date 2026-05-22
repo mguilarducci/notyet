@@ -9,6 +9,7 @@ pub type TaskRecord {
     id: Uuid,
     idempotency_key: String,
     wait_for: String,
+    destination: String,
     wait_until: Timestamp,
     created_at: Timestamp,
   )

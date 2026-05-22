@@ -22,6 +22,8 @@ pub fn unknown_route_returns_404_test() {
   assert response.status == 404
 }
 
+const dest = "https://example.com/cb"
+
 pub fn get_task_returns_200_test() {
   use db <- test_helper.with_db
   let ctx = test_helper.writer_ctx(db, 1, 200, 4)
@@ -31,6 +33,7 @@ pub fn get_task_returns_200_test() {
       [test_helper.v4],
       [test_helper.v4],
       ["5 minutes"],
+      [dest],
       ["2026-05-20T12:00:00Z"],
       ["2026-05-20T12:00:00Z"],
     )
@@ -38,8 +41,9 @@ pub fn get_task_returns_200_test() {
     simulate.request(http.Get, "/tasks/" <> test_helper.v4)
     |> router.handle_request(ctx)
   assert response.status == 200
-  assert test_helper.json_field(simulate.read_body(response), "idempotency_key")
-    == test_helper.v4
+  let body = simulate.read_body(response)
+  assert test_helper.json_field(body, "idempotency_key") == test_helper.v4
+  assert test_helper.json_field(body, "destination") == dest
 }
 
 pub fn get_task_missing_returns_404_test() {
@@ -62,10 +66,34 @@ pub fn post_task_happy_path_test() {
   use db <- test_helper.with_db
   let ctx = test_helper.writer_ctx(db, 1, 200, 4)
   let response =
-    test_helper.keyed_request("{\"wait_for\":\"5 minutes\"}", test_helper.v4)
+    test_helper.keyed_request(
+      "{\"wait_for\":\"5 minutes\",\"destination\":\"" <> dest <> "\"}",
+      test_helper.v4,
+    )
     |> router.handle_request(ctx)
   assert response.status == 202
   assert test_helper.json_field(simulate.read_body(response), "status")
     == "accepted"
   assert test_helper.eventually_count(db, 1, 2000) == 1
+}
+
+pub fn post_task_missing_destination_422_test() {
+  use db <- test_helper.with_db
+  let ctx = test_helper.writer_ctx(db, 1, 200, 4)
+  let response =
+    test_helper.keyed_request("{\"wait_for\":\"5 minutes\"}", test_helper.v4)
+    |> router.handle_request(ctx)
+  assert response.status == 422
+}
+
+pub fn post_task_invalid_destination_422_test() {
+  use db <- test_helper.with_db
+  let ctx = test_helper.writer_ctx(db, 1, 200, 4)
+  let response =
+    test_helper.keyed_request(
+      "{\"wait_for\":\"5 minutes\",\"destination\":\"ftp://x\"}",
+      test_helper.v4,
+    )
+    |> router.handle_request(ctx)
+  assert response.status == 422
 }

@@ -16,6 +16,7 @@ fn sample() -> view.Task {
     wait_for: "5 minutes",
     wait_until: timestamp.from_unix_seconds(1_000_000),
     created_at: timestamp.from_unix_seconds(900_000),
+    destination: "https://example.com/cb",
   )
 }
 
@@ -25,6 +26,7 @@ pub fn encode_includes_core_fields_test() {
   assert test_helper.json_field(body, "idempotency_key") == "k-1"
   assert test_helper.json_field(body, "status") == "accepted"
   assert test_helper.json_field(body, "wait_for") == "5 minutes"
+  assert test_helper.json_field(body, "destination") == "https://example.com/cb"
 }
 
 pub fn encode_timestamps_are_rfc3339_utc_test() {

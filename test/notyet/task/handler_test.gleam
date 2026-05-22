@@ -9,10 +9,15 @@ fn ctx(db) {
   test_helper.writer_ctx(db, 1, 200, 4)
 }
 
+const dest = "https://example.com/cb"
+
 pub fn create_accepts_and_persists_test() {
   use db <- test_helper.with_db
   let response =
-    test_helper.keyed_request("{\"wait_for\":\"5 minutes\"}", test_helper.v4)
+    test_helper.keyed_request(
+      "{\"wait_for\":\"5 minutes\",\"destination\":\"" <> dest <> "\"}",
+      test_helper.v4,
+    )
     |> task.create(ctx(db))
   assert response.status == 202
   assert test_helper.json_field(simulate.read_body(response), "status")
@@ -23,9 +28,24 @@ pub fn create_accepts_and_persists_test() {
 pub fn create_bad_wait_for_422_test() {
   use db <- test_helper.with_db
   let response =
-    test_helper.keyed_request("{\"wait_for\":\"5 banana\"}", test_helper.v4)
+    test_helper.keyed_request(
+      "{\"wait_for\":\"5 banana\",\"destination\":\"" <> dest <> "\"}",
+      test_helper.v4,
+    )
     |> task.create(ctx(db))
   assert response.status == 422
+}
+
+pub fn create_bad_destination_422_test() {
+  use db <- test_helper.with_db
+  let response =
+    test_helper.keyed_request(
+      "{\"wait_for\":\"5 minutes\",\"destination\":\"ftp://x\"}",
+      test_helper.v4,
+    )
+    |> task.create(ctx(db))
+  assert response.status == 422
+  assert test_helper.count_tasks(db) == 0
 }
 
 pub fn missing_idempotency_key_422_test() {
@@ -33,7 +53,9 @@ pub fn missing_idempotency_key_422_test() {
   // No Idempotency-Key header -> 422 before the body is even decoded.
   let response =
     simulate.request(http.Post, "/tasks")
-    |> simulate.string_body("{\"wait_for\":\"5 minutes\"}")
+    |> simulate.string_body(
+      "{\"wait_for\":\"5 minutes\",\"destination\":\"" <> dest <> "\"}",
+    )
     |> request.set_header("content-type", "application/json")
     |> task.create(ctx(db))
   assert response.status == 422
@@ -43,7 +65,10 @@ pub fn missing_idempotency_key_422_test() {
 pub fn empty_idempotency_key_422_test() {
   use db <- test_helper.with_db
   let response =
-    test_helper.keyed_request("{\"wait_for\":\"5 minutes\"}", "")
+    test_helper.keyed_request(
+      "{\"wait_for\":\"5 minutes\",\"destination\":\"" <> dest <> "\"}",
+      "",
+    )
     |> task.create(ctx(db))
   assert response.status == 422
   assert test_helper.count_tasks(db) == 0
@@ -53,7 +78,10 @@ pub fn non_v4_idempotency_key_422_test() {
   use db <- test_helper.with_db
   // A non-UUID-v4 key is rejected before the body is decoded.
   let response =
-    test_helper.keyed_request("{\"wait_for\":\"5 minutes\"}", "not-a-uuid")
+    test_helper.keyed_request(
+      "{\"wait_for\":\"5 minutes\",\"destination\":\"" <> dest <> "\"}",
+      "not-a-uuid",
+    )
     |> task.create(ctx(db))
   assert response.status == 422
   assert test_helper.count_tasks(db) == 0
@@ -66,6 +94,7 @@ fn seed(db, key) {
       [test_helper.v4],
       [key],
       ["5 minutes"],
+      [dest],
       ["2026-05-20T12:00:00Z"],
       ["2026-05-20T12:00:00Z"],
     )
@@ -83,6 +112,7 @@ pub fn read_returns_200_with_resource_test() {
   assert test_helper.json_field(body, "idempotency_key") == test_helper.v4
   assert test_helper.json_field(body, "status") == "accepted"
   assert test_helper.json_field(body, "wait_for") == "5 minutes"
+  assert test_helper.json_field(body, "destination") == dest
 }
 
 pub fn read_missing_key_returns_404_test() {
@@ -107,11 +137,17 @@ pub fn retry_same_key_persists_once_test() {
   use db <- test_helper.with_db
   let context = ctx(db)
   let first =
-    test_helper.keyed_request("{\"wait_for\":\"5 minutes\"}", test_helper.v4)
+    test_helper.keyed_request(
+      "{\"wait_for\":\"5 minutes\",\"destination\":\"" <> dest <> "\"}",
+      test_helper.v4,
+    )
     |> task.create(context)
   // Retry with the SAME key but a DIFFERENT duration: dedup -> exactly one row.
   let second =
-    test_helper.keyed_request("{\"wait_for\":\"1 hour\"}", test_helper.v4)
+    test_helper.keyed_request(
+      "{\"wait_for\":\"1 hour\",\"destination\":\"" <> dest <> "\"}",
+      test_helper.v4,
+    )
     |> task.create(context)
   assert first.status == 202
   assert second.status == 202

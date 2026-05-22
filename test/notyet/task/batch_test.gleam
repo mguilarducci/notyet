@@ -12,6 +12,7 @@ fn rec() -> record.TaskRecord {
     id: uuid.v4(),
     idempotency_key: uuid.v4_string(),
     wait_for: "5 minutes",
+    destination: "https://example.com/cb",
     wait_until: timestamp.system_time(),
     created_at: timestamp.system_time(),
   )
