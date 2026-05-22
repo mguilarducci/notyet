@@ -4,8 +4,8 @@ SELECT
   idempotency_key,
   status,
   for_duration,
-  wait_until::text,
-  created_at::text,
-  coalesce(data::text, '') AS data
+  to_char(wait_until AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS wait_until,
+  to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at,
+  COALESCE(data::text, '') AS data
 FROM waits
 WHERE idempotency_key = $1;

@@ -1,4 +1,5 @@
 import gleam/dynamic/decode
+import gleam/time/timestamp
 import notyet/wait/sql
 import pog
 import test_helper
@@ -79,6 +80,11 @@ pub fn get_by_key_returns_inserted_row_test() {
   assert row.for_duration == "5 minutes"
   // Postgres re-serializes jsonb with a space after the colon: {"k":1} -> {"k": 1}.
   assert row.data == "{\"k\": 1}"
+  let assert Ok(expected) = timestamp.parse_rfc3339(ts)
+  let assert Ok(returned_wait_until) = timestamp.parse_rfc3339(row.wait_until)
+  assert returned_wait_until == expected
+  let assert Ok(returned_created_at) = timestamp.parse_rfc3339(row.created_at)
+  assert returned_created_at == expected
 }
 
 pub fn get_by_key_missing_returns_empty_test() {
