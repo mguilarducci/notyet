@@ -42,10 +42,10 @@ migrate-status:
 	gleam run -m cigogne show
 
 sqlgen:
-	gleam run -m squirrel
+	gleam run -m squirrel_db
 
 sqlcheck:
-	gleam run -m squirrel check
+	gleam run -m squirrel_db -- check
 
 run:
 	gleam run
