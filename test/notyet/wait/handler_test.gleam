@@ -1,6 +1,7 @@
 import gleam/http
 import gleam/http/request
 import notyet/wait
+import notyet/wait/sql
 import test_helper
 import wisp/simulate
 
@@ -91,6 +92,43 @@ pub fn empty_idempotency_key_422_test() {
     |> wait.create(ctx(db))
   assert response.status == 422
   assert test_helper.count_waits(db) == 0
+}
+
+fn seed(db, key) {
+  let assert Ok(_) =
+    sql.insert_waits(
+      db,
+      [test_helper.v4],
+      [test_helper.v4],
+      [key],
+      ["{\"k\":1}"],
+      ["5 minutes"],
+      ["2026-05-20T12:00:00Z"],
+      ["2026-05-20T12:00:00Z"],
+    )
+  Nil
+}
+
+pub fn read_returns_200_with_resource_test() {
+  use db <- test_helper.with_db
+  seed(db, "read-me")
+  let response =
+    simulate.request(http.Get, "/wait/read-me")
+    |> wait.read(ctx(db), "read-me")
+  assert response.status == 200
+  let body = simulate.read_body(response)
+  assert test_helper.json_field(body, "idempotency_key") == "read-me"
+  assert test_helper.json_field(body, "status") == "accepted"
+  assert test_helper.json_field(body, "for") == "5 minutes"
+  assert test_helper.json_field(body, "activity") == test_helper.v4
+}
+
+pub fn read_missing_key_returns_404_test() {
+  use db <- test_helper.with_db
+  let response =
+    simulate.request(http.Get, "/wait/ghost")
+    |> wait.read(ctx(db), "ghost")
+  assert response.status == 404
 }
 
 pub fn retry_same_key_persists_once_test() {

@@ -1,5 +1,5 @@
 import gleam/dynamic/decode
-import gleam/http.{Post}
+import gleam/http.{Get, Post}
 import gleam/http/request
 import gleam/json
 import gleam/option.{type Option, None, Some}
@@ -9,8 +9,11 @@ import notyet/wait/batch
 import notyet/wait/duration as duration_parser
 import notyet/wait/json_value.{type JsonValue}
 import notyet/wait/record
+import notyet/wait/sql
 import notyet/wait/status
+import notyet/wait/view
 import notyet/web.{type Context}
+import pog
 import wisp.{type Request, type Response}
 import youid/uuid.{type Uuid}
 
@@ -99,6 +102,56 @@ pub fn create(req: Request, ctx: Context) -> Response {
           }
         }
       }
+    }
+  }
+}
+
+pub fn read(req: Request, ctx: Context, key: String) -> Response {
+  use <- wisp.require_method(req, Get)
+
+  case sql.get_wait_by_idempotency_key(ctx.db, key) {
+    Ok(pog.Returned(_, [row])) ->
+      row
+      |> row_to_wait
+      |> view.encode
+      |> json.to_string
+      |> wisp.json_response(200)
+    // idempotency_key is UNIQUE, so the result is 0 or 1 row.
+    Ok(pog.Returned(_, _)) -> wisp.not_found()
+    Error(_) -> wisp.internal_server_error()
+  }
+}
+
+/// Map a persisted row into the read-model. The row is written only by this
+/// service through a schema with a UNIQUE key, a status CHECK, RFC3339
+/// timestamps, and object-or-empty `data`, so the conversions are total against
+/// stored data — hence `let assert`.
+fn row_to_wait(row: sql.GetWaitByIdempotencyKeyRow) -> view.Wait {
+  let assert Ok(id) = uuid.from_string(row.id)
+  let assert Ok(activity) = uuid.from_string(row.activity)
+  let assert Ok(wait_status) = status.from_string(row.status)
+  let assert Ok(wait_until) = timestamp.parse_rfc3339(row.wait_until)
+  let assert Ok(created_at) = timestamp.parse_rfc3339(row.created_at)
+  view.Wait(
+    id: id,
+    activity: activity,
+    idempotency_key: row.idempotency_key,
+    status: wait_status,
+    for_duration: row.for_duration,
+    wait_until: wait_until,
+    created_at: created_at,
+    data: decode_data(row.data),
+  )
+}
+
+/// `data` is the JSON object text, or `""` (the empty-string sentinel the read
+/// query emits for SQL NULL via COALESCE).
+fn decode_data(text: String) -> Option(JsonValue) {
+  case text {
+    "" -> None
+    json_text -> {
+      let assert Ok(value) = json.parse(json_text, json_value.decoder())
+      Some(value)
     }
   }
 }
