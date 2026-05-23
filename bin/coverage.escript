@@ -37,15 +37,40 @@ main(_) ->
     %% lookup on a missing `pgo_query_cache` table.
     {ok, _} = application:ensure_all_started(pgo),
 
+    %% This escript runs EUnit in its own BEAM and never calls
+    %% notyet_test:main, so it must provision the test database itself, the
+    %% same way the gleam test runner does: start a postgres testcontainer, set
+    %% DATABASE_URL, and migrate. `application:load(notyet)` makes
+    %% `code:priv_dir(notyet)` resolve so cigogne finds priv/migrations. The
+    %% container is reaped when this process exits.
+    {ok, _} = application:ensure_all_started(testcontainers),
+    _ = application:load(notyet),
+    testdb:setup(),
+
     case eunit:test(TestMods, [verbose]) of
         ok -> ok;
         error -> halt_with("tests failed", 1)
     end,
 
     SrcMods = [beam_module(B) || B <- SrcBeams],
-    print_summary(SrcMods),
+    {TotalLc, TotalLn, TotalCc, TotalCn} = print_summary(SrcMods),
     write_reports(),
-    ok.
+    LinePct = pct(TotalLc, TotalLn),
+    ClausePct = pct(TotalCc, TotalCn),
+    %% Two gates: lines >= 80% and clauses >= 90%. The line floor is bounded by
+    %% the irreducible boot glue in notyet:main/0 (mist + supervisor + pog
+    %% wiring + sleep_forever), which cannot run under a unit test; the clause
+    %% metric, where main/0 is a single clause, is the stronger branch proxy.
+    case LinePct >= 80.0 andalso ClausePct >= 90.0 of
+        true ->
+            io:format("~nCoverage gate passed: lines ~.2f% (>= 80%), "
+                      "clauses ~.2f% (>= 90%)~n", [LinePct, ClausePct]),
+            ok;
+        false ->
+            halt_with(lists:flatten(io_lib:format(
+                "coverage gate failed: lines ~.2f% (need >= 80%), "
+                "clauses ~.2f% (need >= 90%)", [LinePct, ClausePct])), 1)
+    end.
 
 %% Split beams into {src beam paths, test module atoms}.
 %% Test modules end in "_test"; "notyet_test" is gleeunit's generated entry
@@ -135,7 +160,8 @@ print_summary(Mods) ->
             {0, 0, 0, 0},
             lists:sort(Mods)
         ),
-    print_row("TOTAL", LC, LN, CC, CN).
+    print_row("TOTAL", LC, LN, CC, CN),
+    {LC, LN, CC, CN}.
 
 print_row(Name, Lc, Ln, Cc, Cn) ->
     io:format("  ~-30s ~6.2f% ~5s ~6.2f% ~5s~n",

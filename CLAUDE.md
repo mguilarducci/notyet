@@ -6,25 +6,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A `Makefile` wraps the common flows (it loads `.env` and exports it, so DB-backed targets get `DATABASE_URL`). One command per line — no compound shell anywhere in this repo (Makefile, scripts, Dockerfile, compose).
 
-- `make db-up` — start the dev Postgres container (`docker compose up -d postgres`)
-- `make migrate` — apply pending migrations (`gleam run -m cigogne all`)
+DB-backed targets are **self-provisioning**: they boot their own throwaway `postgres:18-alpine` via **testcontainers** and migrate it in-process (cigogne library API), so they need only a running **Docker daemon** and **Elixir** (a transitive requirement of `testcontainers_gleam`) — no `make db-up`/`make migrate` first. `make db-up`/`migrate` remain for running the app locally and for the containerized stack.
+
+- `make db-up` — start the dev Postgres container for `make run` (`docker compose up -d postgres`)
+- `make migrate` — apply pending migrations against `DATABASE_URL` (`gleam run -m cigogne all`)
 - `make migrate-new NAME=foo` — scaffold a new migration in `priv/migrations`
-- `make sqlgen` — regenerate typed query modules from `*.sql` (`gleam run -m squirrel`); needs a **live, migrated** DB (squirrel introspects it)
-- `make test` — run the full gleeunit suite. **Requires Postgres up + migrated** (`make db-up` then `make migrate` first) — many tests hit a live DB
-- `make run` — start the HTTP server locally
+- `make sqlgen` — regenerate typed query modules from `*.sql` (`gleam run -m squirrel_db`); self-provisions a migrated testcontainers DB for squirrel to introspect
+- `make sqlcheck` — verify the generated SQL matches the `*.sql` (`gleam run -m squirrel_db -- check`); self-provisions like `sqlgen`
+- `make test` — run the full gleeunit suite. Self-provisions the test DB via testcontainers (needs Docker + Elixir); no manual DB setup
+- `make run` — start the HTTP server locally (needs `make db-up` + `make migrate`)
 - `make build` / `make deps` — compile / fetch deps
-- `./bin/coverage` — run the suite under Erlang `cover`, print a per-module + total coverage summary (lines and clauses), and write `build/coverage/cobertura.xml`
-- `docker compose up --build` — full containerized stack: postgres → migrate (one-shot) → app (production Erlang shipment)
+- `./bin/coverage` — run the suite under Erlang `cover` (self-provisions its own testcontainers DB), print a per-module + total summary (lines and clauses), write `build/coverage/cobertura.xml`, and **enforce a dual gate: lines ≥ 80% and clauses ≥ 90%**
+- `docker compose up --build` — full containerized stack: postgres → migrate (one-shot) → app (production Erlang shipment, `erlang:28-alpine`)
+
+Tool versions are pinned in `.tool-versions` (Erlang 28, Gleam 1.16.0, Elixir 1.18). The runtime image's OTP **must match** the `gleam` build image's OTP (currently 28); moving to OTP 29 needs a gleam build image published on OTP 29.
 
 gleeunit has no built-in single-test filter; the runner executes all `*_test` functions it discovers. To narrow scope while iterating, temporarily reduce the test module under edit.
 
 ### Coverage
 
-`bin/coverage` (bash wrapper) runs `gleam test`, then `bin/coverage.escript` cover-compiles the application beams in `build/dev/erlang/notyet/ebin`, re-runs the suite via EUnit under instrumentation, and reports. Two metrics: **lines** (cover's line analysis) and **clauses** (a statement/branch proxy via `calls`/clause — Erlang `cover` has no true branch coverage). Cobertura XML maps to the generated `.erl` artefacts (not the `.gleam` sources), since coverage is measured on the Erlang backend; the module/total percentages are the reliable signal. All application source is measured — only `*_test` and generated `@@` modules are excluded. Coverage gaps must be closed with tests, not by excluding code; the only acceptable uncovered code is the irreducible side-effecting glue in `main/0` (`mist.start` + `process.sleep_forever`), which cannot run under a unit test. `covertool` is a dev dependency.
+`bin/coverage` (bash wrapper) runs `gleam test`, then `bin/coverage.escript` cover-compiles the application beams in `build/dev/erlang/notyet/ebin`, re-runs the suite via EUnit under instrumentation, and reports. The escript runs EUnit in a **separate BEAM** that never calls `notyet_test.main`, so it provisions the test DB itself (`application:ensure_all_started(testcontainers)` + `application:load(notyet)` so `code:priv_dir` resolves, then `testdb:setup()`). Two metrics: **lines** (cover's line analysis) and **clauses** (a statement/branch proxy via `calls`/clause — Erlang `cover` has no true branch coverage). Cobertura XML maps to the generated `.erl` artefacts (not the `.gleam` sources), since coverage is measured on the Erlang backend; the module/total percentages are the reliable signal. All application source is measured — only `*_test` and generated `@@` modules are excluded. **The gate is dual: lines ≥ 80% and clauses ≥ 90%** (the escript exits non-zero otherwise). The line floor sits below the clause floor on purpose: it is bounded by the irreducible side-effecting glue in `notyet:main/0` (`mist.start` + `process.sleep_forever` + supervisor/pog wiring), which cannot run under a unit test and which clause coverage — where `main/0` is a single clause — does not penalize. Coverage gaps must still be closed with tests, not by excluding code. `covertool` is a dev dependency.
 
 ## Environment
 
-All variables are **mandatory** — `main()` reads each with `let assert` and panics at boot if any is missing or unparseable. No dev fallbacks. See `.env.example`.
+All variables are **mandatory** — `notyet/config.from_env` reads, parses, and validates each, returning a typed `ConfigError`; `main()` calls it with `let assert`, so the boot still panics if any is missing or unparseable. No dev fallbacks. See `.env.example`.
 
 - `DATABASE_URL` — pog Postgres connection URL (`postgres://…`).
 - `SECRET_KEY_BASE` — wisp signing key.
@@ -51,7 +56,8 @@ mist (HTTP) → wisp_mist adapter → router.handle_request(req, ctx)
                                           → Postgres (sync read; bypasses the coordinator)
 ```
 
-- **`src/notyet.gleam`** — entrypoint. Reads all env (mandatory) via `envoy`; starts a `static_supervisor` (OneForOne) supervising the `pog` connection pool **and** the **coordinator** actor; recovers the **coordinator's** `Subject` via a named process (`"task_batch"`); builds the `Context`; wires `router.handle_request` through `wisp_mist` + `mist` (bound to `0.0.0.0` so it is reachable in a container). No business logic.
+- **`src/notyet.gleam`** — entrypoint. Loads config via `config.from_env(envoy.get)` (`let assert`); starts a `static_supervisor` (OneForOne) supervising the `pog` connection pool **and** the **coordinator** actor; recovers the **coordinator's** `Subject` via a named process (`"task_batch"`); builds the `Context`; wires `router.handle_request` through `wisp_mist` + `mist` (bound to `0.0.0.0` so it is reachable in a container). No business logic — the testable env parsing/validation lives in `config`.
+- **`src/notyet/config.gleam`** — `AppConfig` + `ConfigError` types and `from_env(get)`, which reads every required env var, parses ints, enforces the boot invariants (batch knobs `> 0`, `pool_size >= max_in_flight`), and returns a typed error. `get` is injected (`fn(String) -> Result(String, Nil)`), so it is pure and unit-testable without touching the process environment; `main` passes `envoy.get`.
 - **`src/notyet/router.gleam`** — single dispatch point. Applies `web.middleware`, then matches `wisp.path_segments(req)` + `req.method`. Pattern: `["tasks"], Post -> create`, `["tasks"], _ -> 405`, `["tasks", key], Get -> read`, `["tasks", key], _ -> 405`, `_ -> 404`.
 - **`src/notyet/web.gleam`** — shared web concerns: the `Context` type (`db: pog.Connection` for the read path + `batch: Subject(batch.Message)` + `enqueue_timeout_ms: Int`, threaded to every handler) and `middleware` (method override, request logging, crash rescue, HEAD handling).
 - **`src/notyet/task.gleam`** — the feature module: request type (`TaskRequest`), decoders (`task_decoder` + private `wait_for_decoder`/`destination_decoder`), the `create` handler (returns `202` on enqueue, `429 + Retry-After` on shed), and the `read` handler (`200` with the resource, `404` on miss, `500` on query error) plus its private `row_to_task` row→read-model mapping.
@@ -75,9 +81,9 @@ Handlers re-assert their own preconditions (`wisp.require_method`, `wisp.require
 
 - **gleeunit** is the runner; tests are public functions suffixed `_test`.
 - **`wisp/simulate`** builds requests in-process (`simulate.request`, `simulate.read_body`) — no live server needed. To send a JSON body, use `simulate.string_body(json) |> request.set_header("content-type", "application/json")` (there is no `simulate.json_body(String)`; the JSON-arg variant takes a `gleam/json.Json`).
-- **DB-backed tests run against a live Postgres.** `test/test_helper.gleam` provides `start_pool` (pool from `DATABASE_URL`, size 1), `with_db` (TRUNCATE `tasks` then run), `count_tasks`, and `dummy_connection` (an unstarted handle for router-only tests). `make test` requires `make db-up && make migrate` first.
-- The coordinator is tested against a live DB with **eventual** assertions (`test_helper.eventually_count` polls until the expected row count or a deadline) because persistence is async. Shed (`429`), in-flight cap, and pipelining are deterministic via a **gated insert** (`batch.start_with_insert` + an insert that signals start then sleeps to hold a slot). Tests cover both flush triggers, draining held batches, dedup (intra-batch + across calls), shed under saturation, the in-flight cap, and two-worker pipelining.
-- Test layout mirrors `src/`. Focused unit tests per concern (`duration_unit_test`, `decoder_unit_test`, `status_unit_test`, `view_unit_test`), DB integration tests (`sql_integration_test`, `batch_test`, `handler_test`), and a router-level integration test (`router_integration_test`).
+- **DB-backed tests run against a self-provisioned Postgres.** `test/testdb.gleam` `setup` starts a `postgres:18-alpine` testcontainer, sets `DATABASE_URL` in-process, and migrates via the cigogne library API; `notyet_test.main` calls it before `integration.main()` (the testcontainers runner that disables Ryuk and uses a generous per-test timeout), and the coverage escript calls it too. So `make test` needs only a Docker daemon + Elixir — no `make db-up`/`make migrate`. `test/test_helper.gleam` provides `start_pool` (pool from `DATABASE_URL`, size 1), `with_db` (TRUNCATE `tasks` then run), `count_tasks`, `dummy_connection` (an unstarted handle for router-only tests), and `broken_pool` (a started pool pointed at a non-existent DB, to drive the `500` query-error branch).
+- The coordinator is tested against a live DB with **eventual** assertions (`test_helper.eventually_count` polls until the expected row count or a deadline) because persistence is async. Shed (`429`), in-flight cap, and pipelining are deterministic via a **gated insert** (`batch.start_with_insert` + an insert that signals start then sleeps to hold a slot); a **failing insert** covers the worker's best-effort log-and-drop path. Tests cover both flush triggers, draining held batches, dedup (intra-batch + across calls), shed under saturation, the in-flight cap, two-worker pipelining, and insert failure.
+- Test layout mirrors `src/`. Focused unit tests per concern (`config_unit_test`, `duration_unit_test`, `decoder_unit_test`, `status_unit_test`, `view_unit_test`), DB integration tests (`sql_integration_test`, `batch_test`, `handler_test`), and a router-level integration test (`router_integration_test`).
 - Development is test-driven: write the failing test, then the implementation.
 
 ## Conventions

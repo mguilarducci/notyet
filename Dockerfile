@@ -8,6 +8,8 @@ COPY . .
 RUN gleam export erlang-shipment
 
 # --- runtime stage: slim Erlang, production shipment only ---
+# Must match the OTP of the gleam build image above (currently OTP 28); the
+# erlang-shipment's beams are compiled there and run on this runtime's ERTS.
 FROM erlang:28-alpine AS runtime
 
 WORKDIR /app

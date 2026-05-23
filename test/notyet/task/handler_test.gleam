@@ -155,6 +155,15 @@ pub fn retry_same_key_persists_once_test() {
   assert test_helper.eventually_count(db, 1, 2000) == 1
 }
 
+pub fn read_query_error_returns_500_test() {
+  // A pool pointed at a non-existent database makes the lookup query fail,
+  // exercising the handler's query-error branch.
+  let response =
+    simulate.request(http.Get, "/tasks/" <> test_helper.v4)
+    |> task.read(ctx(test_helper.broken_pool()), test_helper.v4)
+  assert response.status == 500
+}
+
 pub fn read_wrong_method_returns_405_test() {
   use db <- test_helper.with_db
   let response =

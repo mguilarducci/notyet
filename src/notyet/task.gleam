@@ -111,7 +111,9 @@ fn create_with_key(req: Request, ctx: Context, key: String) -> Response {
         )
       case batch.enqueue(ctx.batch, row, ctx.enqueue_timeout_ms) {
         Ok(_) ->
-          json.object([#("status", json.string(status.to_string(status.Pending)))])
+          json.object([
+            #("status", json.string(status.to_string(status.Pending))),
+          ])
           |> json.to_string
           |> wisp.json_response(202)
         // Shed: real client demand exceeded admission. 429 + Retry-After tells

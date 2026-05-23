@@ -83,7 +83,9 @@ pub fn get_by_key_missing_returns_empty_test() {
 pub fn same_key_dedups_to_one_row_test() {
   use db <- test_helper.with_db
   let assert Ok(_) =
-    sql.insert_tasks(db, [v4_a], ["key-1"], ["5 minutes"], [dest], [ts], [ts], [ts])
+    sql.insert_tasks(db, [v4_a], ["key-1"], ["5 minutes"], [dest], [ts], [ts], [
+      ts,
+    ])
   let assert Ok(_) =
     sql.insert_tasks(db, [v4_b], ["key-1"], ["1 hour"], [dest], [ts], [ts], [ts])
   assert test_helper.count_tasks(db) == 1

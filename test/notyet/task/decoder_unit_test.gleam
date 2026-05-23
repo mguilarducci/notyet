@@ -16,7 +16,9 @@ const dest = "http://example.com/cb"
 
 pub fn valid_payload_decodes_test() {
   let assert Ok(req) =
-    decode_json("{\"wait_for\":\"5 minutes\",\"destination\":\"" <> dest <> "\"}")
+    decode_json(
+      "{\"wait_for\":\"5 minutes\",\"destination\":\"" <> dest <> "\"}",
+    )
   assert req.duration == duration.seconds(300)
   assert req.raw_wait_for == "5 minutes"
   assert req.destination == dest
@@ -24,14 +26,14 @@ pub fn valid_payload_decodes_test() {
 
 pub fn invalid_duration_rejected_test() {
   assert decode_json(
-    "{\"wait_for\":\"bogus\",\"destination\":\"" <> dest <> "\"}",
-  )
-  |> result.is_error
+      "{\"wait_for\":\"bogus\",\"destination\":\"" <> dest <> "\"}",
+    )
+    |> result.is_error
 }
 
 pub fn empty_wait_for_rejected_test() {
   assert decode_json("{\"wait_for\":\"\",\"destination\":\"" <> dest <> "\"}")
-  |> result.is_error
+    |> result.is_error
 }
 
 pub fn missing_wait_for_rejected_test() {
@@ -39,16 +41,16 @@ pub fn missing_wait_for_rejected_test() {
 }
 
 pub fn wrong_type_rejected_test() {
-  assert decode_json(
-    "{\"wait_for\":123,\"destination\":\"" <> dest <> "\"}",
-  )
-  |> result.is_error
+  assert decode_json("{\"wait_for\":123,\"destination\":\"" <> dest <> "\"}")
+    |> result.is_error
 }
 
 pub fn extra_field_ignored_test() {
   let assert Ok(req) =
     decode_json(
-      "{\"wait_for\":\"5 minutes\",\"destination\":\"" <> dest <> "\",\"extra\":\"x\"}",
+      "{\"wait_for\":\"5 minutes\",\"destination\":\""
+      <> dest
+      <> "\",\"extra\":\"x\"}",
     )
   assert req.duration == duration.seconds(300)
   assert req.raw_wait_for == "5 minutes"
@@ -64,44 +66,44 @@ pub fn raw_wait_for_preserved_verbatim_test() {
 
 pub fn bad_wait_for_string_test() {
   assert decode_json(
-    "{\"wait_for\":\"5 banana\",\"destination\":\"" <> dest <> "\"}",
-  )
-  |> result.is_error
+      "{\"wait_for\":\"5 banana\",\"destination\":\"" <> dest <> "\"}",
+    )
+    |> result.is_error
 }
 
 pub fn destination_valid_http_test() {
   assert decode_json(
-    "{\"wait_for\":\"5 minutes\",\"destination\":\"http://example.com/cb\"}",
-  )
-  |> result.is_ok
+      "{\"wait_for\":\"5 minutes\",\"destination\":\"http://example.com/cb\"}",
+    )
+    |> result.is_ok
 }
 
 pub fn destination_valid_https_test() {
   assert decode_json(
-    "{\"wait_for\":\"5 minutes\",\"destination\":\"https://example.com/cb\"}",
-  )
-  |> result.is_ok
+      "{\"wait_for\":\"5 minutes\",\"destination\":\"https://example.com/cb\"}",
+    )
+    |> result.is_ok
 }
 
 pub fn destination_rejects_non_http_scheme_test() {
   assert decode_json(
-    "{\"wait_for\":\"5 minutes\",\"destination\":\"ftp://example.com\"}",
-  )
-  |> result.is_error
+      "{\"wait_for\":\"5 minutes\",\"destination\":\"ftp://example.com\"}",
+    )
+    |> result.is_error
 }
 
 pub fn destination_rejects_empty_host_test() {
   assert decode_json(
-    "{\"wait_for\":\"5 minutes\",\"destination\":\"http:///path\"}",
-  )
-  |> result.is_error
+      "{\"wait_for\":\"5 minutes\",\"destination\":\"http:///path\"}",
+    )
+    |> result.is_error
 }
 
 pub fn destination_rejects_garbage_test() {
   assert decode_json(
-    "{\"wait_for\":\"5 minutes\",\"destination\":\"not a url\"}",
-  )
-  |> result.is_error
+      "{\"wait_for\":\"5 minutes\",\"destination\":\"not a url\"}",
+    )
+    |> result.is_error
 }
 
 pub fn destination_required_test() {
