@@ -1,10 +1,10 @@
 import envoy
 import gleam/dynamic/decode
-import gleam/option.{None, Some}
 import gleam/erlang/process
 import gleam/http
 import gleam/http/request
 import gleam/json
+import gleam/option.{None, Some}
 import gleam/otp/actor
 import gleam/otp/static_supervisor as supervisor
 import gleam/string
