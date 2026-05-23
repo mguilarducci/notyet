@@ -7,6 +7,7 @@ import gleam/http/request
 import gleam/json
 import gleam/otp/actor
 import gleam/otp/static_supervisor as supervisor
+import gleam/string
 import notyet/task/batch
 import notyet/web
 import pog
@@ -73,6 +74,27 @@ pub fn count_tasks(db: pog.Connection) -> Int {
 pub fn dummy_connection() -> pog.Connection {
   process.new_name("dummy_unused_pool")
   |> pog.named_connection
+}
+
+// A started pool pointed at a database that does not exist, so every query
+// fails with an error rather than returning rows. Drives the handler's
+// query-error (500) branch.
+pub fn broken_pool() -> pog.Connection {
+  let assert Ok(database_url) = envoy.get("DATABASE_URL")
+    as "DATABASE_URL must be set for integration tests"
+  let bad_url = string.replace(database_url, "/test", "/notyet_no_such_db")
+
+  let pool_name = process.new_name("broken_db_pool")
+  let assert Ok(db_config) = pog.url_config(pool_name, bad_url)
+  let db_config = pog.pool_size(db_config, 1)
+
+  let assert Ok(_) =
+    supervisor.new(supervisor.OneForOne)
+    |> supervisor.add(pog.supervised(db_config))
+    |> supervisor.start
+    as "failed to start broken db pool"
+
+  pog.named_connection(pool_name)
 }
 
 pub fn start_writer(

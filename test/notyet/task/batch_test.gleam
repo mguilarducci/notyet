@@ -121,6 +121,30 @@ pub fn in_flight_cap_holds_test() {
   assert process.receive(started, 300) == Error(Nil)
 }
 
+// An insert that always fails, to drive the worker's error branch.
+fn failing_insert() {
+  fn(_db: pog.Connection, _records: List(record.TaskRecord)) {
+    Error(pog.ConnectionUnavailable)
+  }
+}
+
+// A failing insert is best-effort: the worker logs and drops the batch, the
+// actor survives, and the slot frees via WorkerDone so later enqueues still
+// succeed. Nothing is persisted.
+pub fn insert_failure_is_logged_and_dropped_test() {
+  use db <- test_helper.with_db
+  let assert Ok(actor.Started(_, subject)) =
+    batch.start_with_insert(
+      db,
+      batch.Config(max_size: 1, interval_ms: 60_000, max_in_flight: 2),
+      failing_insert(),
+    )
+  assert batch.enqueue(subject, rec(), 1000) == Ok(Nil)
+  // Slot freed after the failed worker exits -> actor keeps accepting.
+  assert batch.enqueue(subject, rec(), 1000) == Ok(Nil)
+  assert test_helper.eventually_count(db, 1, 500) == 0
+}
+
 // max_in_flight: 2 -> a second batch starts while the first is still in flight.
 pub fn pipelining_runs_two_workers_test() {
   use db <- test_helper.with_db
