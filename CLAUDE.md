@@ -17,9 +17,9 @@ DB-backed targets are **self-provisioning**: they boot their own throwaway `post
 - `make run` — start the HTTP server locally (needs `make db-up` + `make migrate`)
 - `make build` / `make deps` — compile / fetch deps
 - `./bin/coverage` — run the suite under Erlang `cover` (self-provisions its own testcontainers DB), print a per-module + total summary (lines and clauses), write `build/coverage/cobertura.xml`, and **enforce a dual gate: lines ≥ 80% and clauses ≥ 90%**
-- `docker compose up --build` — full containerized stack: postgres → migrate (one-shot) → app (production Erlang shipment, `erlang:29-alpine`)
+- `docker compose up --build` — full containerized stack: postgres → migrate (one-shot) → app (production Erlang shipment, `erlang:28-alpine`)
 
-Tool versions are pinned in `.tool-versions` (Erlang 29, Gleam 1.16.0, Elixir 1.18).
+Tool versions are pinned in `.tool-versions` (Erlang 28, Gleam 1.16.0, Elixir 1.18). The runtime image's OTP **must match** the `gleam` build image's OTP (currently 28); moving to OTP 29 needs a gleam build image published on OTP 29.
 
 gleeunit has no built-in single-test filter; the runner executes all `*_test` functions it discovers. To narrow scope while iterating, temporarily reduce the test module under edit.
 
