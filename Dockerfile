@@ -8,7 +8,7 @@ COPY . .
 RUN gleam export erlang-shipment
 
 # --- runtime stage: slim Erlang, production shipment only ---
-FROM erlang:28-alpine AS runtime
+FROM erlang:29-alpine AS runtime
 
 WORKDIR /app
 COPY --from=build /app/build/erlang-shipment /app
