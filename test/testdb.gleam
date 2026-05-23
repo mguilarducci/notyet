@@ -1,27 +1,23 @@
 //// Test database provisioning via testcontainers.
 ////
-//// `setup` starts a postgres:18-alpine container (reused across runs, Ryuk
-//// disabled so it survives into the coverage escript's separate BEAM), sets
-//// `DATABASE_URL` in-process, persists the URL to `build/coverage/.test_db_url`
-//// for the coverage escript to read, and applies migrations via the cigogne
-//// library API.
+//// `setup` starts a postgres:18-alpine container, sets `DATABASE_URL`
+//// in-process, and applies migrations via the cigogne library API. Both the
+//// gleam test runner (`notyet_test.main`) and the coverage escript call it so
+//// each test BEAM provisions its own database; the container is reaped when
+//// the owning process exits.
 
 import cigogne
 import cigogne/config
 import envoy
 import gleam/int
 import gleam/option
-import simplifile
 import testcontainers_gleam
 import testcontainers_gleam/postgres
-
-pub const url_file = "build/coverage/.test_db_url"
 
 pub fn setup() -> Nil {
   let container =
     postgres.new()
     |> postgres.with_image("postgres:18-alpine")
-    |> postgres.with_reuse(True)
     |> postgres.build
 
   let assert Ok(running) = testcontainers_gleam.start_container(container)
@@ -31,8 +27,6 @@ pub fn setup() -> Nil {
   let url = "postgres://test:test@localhost:" <> int.to_string(port) <> "/test"
 
   envoy.set("DATABASE_URL", url)
-  let _ = simplifile.create_directory_all("build/coverage")
-  let _ = simplifile.write(to: url_file, contents: url)
 
   migrate(url)
 }
