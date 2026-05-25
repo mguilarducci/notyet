@@ -1,6 +1,6 @@
 import gleam/json
-import gleam/time/calendar
 import gleam/time/timestamp.{type Timestamp}
+import notyet/clock
 import notyet/task/status.{type Status}
 import youid/uuid.{type Uuid}
 
@@ -26,12 +26,8 @@ pub fn encode(task: Task) -> json.Json {
     #("idempotency_key", json.string(task.idempotency_key)),
     #("status", json.string(status.to_string(task.status))),
     #("wait_for", json.string(task.wait_for)),
-    #("wait_until", json.string(rfc3339(task.wait_until))),
-    #("created_at", json.string(rfc3339(task.created_at))),
+    #("wait_until", json.string(clock.rfc3339(task.wait_until))),
+    #("created_at", json.string(clock.rfc3339(task.created_at))),
     #("destination", json.string(task.destination)),
   ])
-}
-
-fn rfc3339(t: Timestamp) -> String {
-  timestamp.to_rfc3339(t, calendar.utc_offset)
 }
