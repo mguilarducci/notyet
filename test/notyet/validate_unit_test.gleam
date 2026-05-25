@@ -50,6 +50,10 @@ pub fn url_http_rejects_empty_host_test() {
   assert validate.url_http("http:///path") |> result.is_error
 }
 
+pub fn url_http_rejects_https_empty_host_test() {
+  assert validate.url_http("https:///path") |> result.is_error
+}
+
 pub fn url_http_rejects_garbage_test() {
   assert validate.url_http("not a url") |> result.is_error
 }
