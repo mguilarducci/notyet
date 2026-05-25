@@ -27,6 +27,15 @@ gleeunit has no built-in single-test filter; the runner executes all `*_test` fu
 
 `bin/coverage` (bash wrapper) runs `gleam test`, then `bin/coverage.escript` cover-compiles the application beams in `build/dev/erlang/notyet/ebin`, re-runs the suite via EUnit under instrumentation, and reports. The escript runs EUnit in a **separate BEAM** that never calls `notyet_test.main`, so it provisions the test DB itself (`application:ensure_all_started(testcontainers)` + `application:load(notyet)` so `code:priv_dir` resolves, then `testdb:setup()`). Two metrics: **lines** (cover's line analysis) and **clauses** (a statement/branch proxy via `calls`/clause — Erlang `cover` has no true branch coverage). Cobertura XML maps to the generated `.erl` artefacts (not the `.gleam` sources), since coverage is measured on the Erlang backend; the module/total percentages are the reliable signal. All application source is measured — only `*_test` and generated `@@` modules are excluded. **The gate is dual: lines ≥ 80% and clauses ≥ 90%** (the escript exits non-zero otherwise). The line floor sits below the clause floor on purpose: it is bounded by the irreducible side-effecting glue in `notyet:main/0` (`mist.start` + `process.sleep_forever` + supervisor/pog wiring), which cannot run under a unit test and which clause coverage — where `main/0` is a single clause — does not penalize. Coverage gaps must still be closed with tests, not by excluding code. `covertool` is a dev dependency.
 
+### CI
+
+`.github/workflows/ci.yml` runs four jobs on push-to-`main`/PR (OTP 28, Gleam 1.16.0, Elixir 1.18; `mix local.hex`/`local.rebar` are installed first because `gleam build` compiles the Elixir testcontainers dep chain).
+
+- **lint** — `gleam format --check src test` + `gleam build --warnings-as-errors`
+- **test** — `./bin/coverage` (self-provisions the testcontainers DB; the runner installs `inotify-tools`), then uploads `build/coverage/cobertura.xml` to Codecov (`fail_ci_if_error: false`, non-blocking)
+- **sqlcheck** — `gleam run -m squirrel_db -- check` (fails if the generated SQL has drifted from `*.sql`)
+- **docker** — `docker build --target runtime` (verifies the production image builds)
+
 ## Environment
 
 All variables are **mandatory** — `notyet/config.from_env` reads, parses, and validates each, returning a typed `ConfigError`; `main()` calls it with `let assert`, so the boot still panics if any is missing or unparseable. No dev fallbacks. See `.env.example`.
