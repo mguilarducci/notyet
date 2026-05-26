@@ -108,26 +108,15 @@ fn placeholder() -> Target {
 }
 
 /// Serialize a `Target` to its `GET` response object (includes `"type"`).
+/// `body` is omitted when `None` — the response never carries `"body": null`.
 pub fn encode(target: Target) -> json.Json {
-  case target {
-    Webhook(url, method, headers, body) ->
-      json.object([
-        #("type", json.string("webhook")),
-        #("url", json.string(url)),
-        #("method", json.string(method_to_string(method))),
-        #("headers", encode_headers(headers)),
-        #("body", case body {
-          option.Some(b) -> json.string(b)
-          option.None -> json.null()
-        }),
-      ])
-  }
+  json.object([#("type", json.string(kind(target))), ..config_fields(target)])
 }
 
 /// Storage form: `#(kind, config_json)`. `config` is the variant payload as a
 /// JSON string (no `"type"` — the kind lives in its own column).
 pub fn to_storage(target: Target) -> #(String, String) {
-  #(kind(target), json.to_string(storage_config(target)))
+  #(kind(target), json.to_string(json.object(config_fields(target))))
 }
 
 /// Inverse of `to_storage`. Total against rows this service wrote (the schema
@@ -146,11 +135,13 @@ fn kind(target: Target) -> String {
   }
 }
 
-fn storage_config(target: Target) -> json.Json {
+/// Shared field set for both the response (`encode`) and the stored config
+/// (`to_storage`). No `"type"` here — `encode` prepends it, storage keeps the
+/// kind in its own column. `body` is included only when `Some`.
+fn config_fields(target: Target) -> List(#(String, json.Json)) {
   case target {
     Webhook(url, method, headers, body) -> {
       let base = [
-        #("type", json.null()),
         #("url", json.string(url)),
         #("method", json.string(method_to_string(method))),
         #("headers", encode_headers(headers)),
@@ -159,7 +150,6 @@ fn storage_config(target: Target) -> json.Json {
         option.Some(b) -> list.append(base, [#("body", json.string(b))])
         option.None -> base
       }
-      |> json.object
     }
   }
 }

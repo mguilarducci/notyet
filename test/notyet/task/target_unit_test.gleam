@@ -111,7 +111,11 @@ pub fn encode_omits_body_when_none_test() {
   let body = json.to_string(target.encode(no_body))
   let parsed =
     json.parse(body, {
-      use b <- decode.field("body", decode.optional(decode.string))
+      use b <- decode.optional_field(
+        "body",
+        None,
+        decode.map(decode.string, Some),
+      )
       decode.success(b)
     })
   assert parsed == Ok(None)
@@ -122,7 +126,11 @@ pub fn to_storage_kind_and_config_test() {
   assert kind == "webhook"
   let has_type =
     json.parse(config, {
-      use t <- decode.field("type", decode.optional(decode.string))
+      use t <- decode.optional_field(
+        "type",
+        None,
+        decode.map(decode.string, Some),
+      )
       decode.success(t)
     })
   assert has_type == Ok(None)
