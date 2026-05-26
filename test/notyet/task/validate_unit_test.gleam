@@ -66,3 +66,36 @@ pub fn url_http_rejects_userinfo_test() {
 pub fn url_http_rejects_userinfo_user_only_test() {
   assert validate.url_http("https://user@example.com") |> result.is_error
 }
+
+pub fn header_name_accepts_token_test() {
+  assert result.is_ok(validate.header_name("X-Custom-Header"))
+  assert result.is_ok(validate.header_name("Authorization"))
+}
+
+pub fn header_name_rejects_empty_test() {
+  assert result.is_error(validate.header_name(""))
+}
+
+pub fn header_name_rejects_space_test() {
+  assert result.is_error(validate.header_name("Bad Header"))
+}
+
+pub fn header_name_rejects_colon_test() {
+  assert result.is_error(validate.header_name("X:Y"))
+}
+
+pub fn header_name_rejects_crlf_test() {
+  assert result.is_error(validate.header_name("X\r\nInjected"))
+}
+
+pub fn header_value_accepts_plain_test() {
+  assert result.is_ok(validate.header_value("Bearer abc.def"))
+}
+
+pub fn header_value_rejects_cr_test() {
+  assert result.is_error(validate.header_value("a\rb"))
+}
+
+pub fn header_value_rejects_lf_test() {
+  assert result.is_error(validate.header_value("a\nb"))
+}
