@@ -8,6 +8,7 @@ import gleam/string
 import notyet/task/clock
 import notyet/task/record.{type TaskRecord}
 import notyet/task/sql
+import notyet/task/target
 import pog
 import wisp
 import youid/uuid
@@ -242,9 +243,21 @@ fn do_insert(
   let ids = list.map(records, fn(r) { uuid.to_string(r.id) })
   let keys = list.map(records, fn(r) { r.idempotency_key })
   let wait_fors = list.map(records, fn(r) { r.wait_for })
-  let dests = list.map(records, fn(r) { r.destination })
+  let storages = list.map(records, fn(r) { target.to_storage(r.target) })
+  let kinds = list.map(storages, fn(s) { s.0 })
+  let configs = list.map(storages, fn(s) { s.1 })
   let visibles = list.map(records, fn(r) { clock.rfc3339(r.visible_at) })
   let untils = list.map(records, fn(r) { clock.rfc3339(r.wait_until) })
   let createds = list.map(records, fn(r) { clock.rfc3339(r.created_at) })
-  sql.insert_tasks(db, ids, keys, wait_fors, dests, visibles, untils, createds)
+  sql.insert_tasks(
+    db,
+    ids,
+    keys,
+    wait_fors,
+    kinds,
+    configs,
+    visibles,
+    untils,
+    createds,
+  )
 }

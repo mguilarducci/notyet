@@ -2,11 +2,11 @@ import gleam/json
 import gleam/time/timestamp.{type Timestamp}
 import notyet/task/clock
 import notyet/task/status.{type Status}
+import notyet/task/target.{type Target}
 import youid/uuid.{type Uuid}
 
 /// The read-back shape of a task. Pure: no `sql`/`pog` dependency, so `encode`
-/// is unit-testable without a database. The handler maps a persisted row into
-/// this before encoding.
+/// is unit-testable without a database.
 pub type Task {
   Task(
     id: Uuid,
@@ -15,7 +15,7 @@ pub type Task {
     wait_for: String,
     wait_until: Timestamp,
     created_at: Timestamp,
-    destination: String,
+    target: Target,
   )
 }
 
@@ -28,6 +28,6 @@ pub fn encode(task: Task) -> json.Json {
     #("wait_for", json.string(task.wait_for)),
     #("wait_until", json.string(clock.rfc3339(task.wait_until))),
     #("created_at", json.string(clock.rfc3339(task.created_at))),
-    #("destination", json.string(task.destination)),
+    #("target", target.encode(task.target)),
   ])
 }

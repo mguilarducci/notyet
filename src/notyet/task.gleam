@@ -9,6 +9,7 @@ import notyet/task/duration as duration_parser
 import notyet/task/record
 import notyet/task/sql
 import notyet/task/status
+import notyet/task/target
 import notyet/task/validate
 import notyet/task/view
 import notyet/web.{type Context}
@@ -19,7 +20,7 @@ import youid/uuid
 const idempotency_header = "idempotency-key"
 
 pub type TaskRequest {
-  TaskRequest(duration: Duration, raw_wait_for: String, destination: String)
+  TaskRequest(duration: Duration, raw_wait_for: String, target: target.Target)
 }
 
 /// Decodes the "wait_for" field into both the parsed duration and its raw string.
@@ -31,21 +32,13 @@ fn wait_for_decoder() -> decode.Decoder(#(Duration, String)) {
   }
 }
 
-fn destination_decoder() -> decode.Decoder(String) {
-  use s <- decode.then(decode.string)
-  case validate.url_http(s) {
-    Ok(url) -> decode.success(url)
-    Error(_) -> decode.failure("", "destination must be an http(s) URL")
-  }
-}
-
 pub fn task_decoder() -> decode.Decoder(TaskRequest) {
   use parsed <- decode.field("wait_for", wait_for_decoder())
-  use destination <- decode.field("destination", destination_decoder())
+  use tgt <- decode.field("target", target.decoder())
   decode.success(TaskRequest(
     duration: parsed.0,
     raw_wait_for: parsed.1,
-    destination: destination,
+    target: tgt,
   ))
 }
 
@@ -77,7 +70,7 @@ fn create_with_key(req: Request, ctx: Context, key: String) -> Response {
           id: uuid.v4(),
           idempotency_key: key,
           wait_for: tr.raw_wait_for,
-          destination: tr.destination,
+          target: tr.target,
           visible_at: wait_until,
           wait_until: wait_until,
           created_at: now,
@@ -134,6 +127,7 @@ fn row_to_task(row: sql.GetTaskByIdempotencyKeyRow) -> view.Task {
   let assert Ok(task_status) = status.from_string(row.status)
   let assert Ok(wait_until) = timestamp.parse_rfc3339(row.wait_until)
   let assert Ok(created_at) = timestamp.parse_rfc3339(row.created_at)
+  let assert Ok(tgt) = target.from_storage(row.target_kind, row.target_config)
   view.Task(
     id: id,
     idempotency_key: row.idempotency_key,
@@ -141,6 +135,6 @@ fn row_to_task(row: sql.GetTaskByIdempotencyKeyRow) -> view.Task {
     wait_for: row.wait_for,
     wait_until: wait_until,
     created_at: created_at,
-    destination: row.destination,
+    target: tgt,
   )
 }

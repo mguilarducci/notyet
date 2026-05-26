@@ -1,0 +1,192 @@
+import gleam/dict.{type Dict}
+import gleam/dynamic/decode
+import gleam/json
+import gleam/list
+import gleam/option.{type Option}
+import gleam/result
+import notyet/task/validate
+
+/// The delivery target — a closed sum type. Only `Webhook` exists this session;
+/// future variants (QueuePublish, Email) are added as new arms (code change),
+/// keeping every `case` exhaustive.
+pub type Target {
+  Webhook(
+    url: String,
+    method: Method,
+    headers: Dict(String, String),
+    body: Option(String),
+  )
+}
+
+/// HTTP method for a webhook delivery. Closed set.
+pub type Method {
+  Get
+  Post
+  Put
+  Patch
+  Delete
+}
+
+pub fn method_to_string(method: Method) -> String {
+  case method {
+    Get -> "GET"
+    Post -> "POST"
+    Put -> "PUT"
+    Patch -> "PATCH"
+    Delete -> "DELETE"
+  }
+}
+
+pub fn method_from_string(value: String) -> Result(Method, Nil) {
+  case value {
+    "GET" -> Ok(Get)
+    "POST" -> Ok(Post)
+    "PUT" -> Ok(Put)
+    "PATCH" -> Ok(Patch)
+    "DELETE" -> Ok(Delete)
+    _ -> Error(Nil)
+  }
+}
+
+/// Boundary decoder: request JSON object → typed `Target`. Reads the `"type"`
+/// discriminator, then runs the variant's decoder. This is the home of per-type
+/// validation (url is a real http(s) URL, method is in-set, headers have valid
+/// names and no CR/LF). A failure here becomes a 422.
+pub fn decoder() -> decode.Decoder(Target) {
+  use type_ <- decode.field("type", decode.string)
+  case type_ {
+    "webhook" -> webhook_decoder()
+    _ -> decode.failure(placeholder(), "known target type")
+  }
+}
+
+fn webhook_decoder() -> decode.Decoder(Target) {
+  use url <- decode.field("url", url_decoder())
+  use method <- decode.field("method", method_decoder())
+  use headers <- decode.optional_field("headers", dict.new(), headers_decoder())
+  use body <- decode.optional_field("body", option.None, body_decoder())
+  decode.success(Webhook(url:, method:, headers:, body:))
+}
+
+/// Body is opaque (sent raw to the webhook), so CR/LF/tab are allowed — but a
+/// NUL byte cannot be stored in JSONB, so reject it at the boundary.
+fn body_decoder() -> decode.Decoder(Option(String)) {
+  use s <- decode.then(decode.string)
+  case validate.no_nul(s) {
+    Ok(_) -> decode.success(option.Some(s))
+    Error(_) -> decode.failure(option.None, "body without a NUL byte")
+  }
+}
+
+fn url_decoder() -> decode.Decoder(String) {
+  use s <- decode.then(decode.string)
+  case validate.url_http(s) {
+    Ok(u) -> decode.success(u)
+    Error(_) -> decode.failure("", "http(s) url")
+  }
+}
+
+fn method_decoder() -> decode.Decoder(Method) {
+  use s <- decode.then(decode.string)
+  case method_from_string(s) {
+    Ok(m) -> decode.success(m)
+    Error(_) -> decode.failure(Get, "http method")
+  }
+}
+
+fn headers_decoder() -> decode.Decoder(Dict(String, String)) {
+  use raw <- decode.then(decode.dict(decode.string, decode.string))
+  case list.all(dict.to_list(raw), valid_header) {
+    True -> decode.success(raw)
+    False -> decode.failure(dict.new(), "valid headers")
+  }
+}
+
+fn valid_header(pair: #(String, String)) -> Bool {
+  result.is_ok(validate.header_name(pair.0))
+  && result.is_ok(validate.header_value(pair.1))
+}
+
+/// Default value for the `decode.failure` of an unknown type; never surfaced
+/// (a failure decoder discards it).
+fn placeholder() -> Target {
+  Webhook("", Get, dict.new(), option.None)
+}
+
+/// Serialize a `Target` to its `GET` response object (includes `"type"`).
+/// `body` is omitted when `None` — the response never carries `"body": null`.
+pub fn encode(target: Target) -> json.Json {
+  json.object([#("type", json.string(kind(target))), ..config_fields(target)])
+}
+
+/// Storage form: `#(kind, config_json)`. `config` is the variant payload as a
+/// JSON string (no `"type"` — the kind lives in its own column).
+pub fn to_storage(target: Target) -> #(String, String) {
+  #(kind(target), json.to_string(json.object(config_fields(target))))
+}
+
+/// Inverse of `to_storage`. Uses a STRUCTURAL decoder (`storage_decoder`), not
+/// the write-boundary `decoder()`: it parses the shape the schema CHECK already
+/// guarantees and does NOT re-run business validation (URL syntax, header
+/// tokens). Re-validating on read would turn any CHECK-satisfying row the write
+/// boundary would have rejected into a panic via `row_to_task`'s `let assert`.
+/// Validation belongs on write; read trusts the schema.
+pub fn from_storage(kind: String, config: String) -> Result(Target, Nil) {
+  case kind {
+    "webhook" ->
+      json.parse(config, storage_decoder()) |> result.replace_error(Nil)
+    _ -> Error(Nil)
+  }
+}
+
+/// Structural read-back decoder: `url`/`headers`/`body` as plain strings (no
+/// business validation), `method` via the closed set (which the schema CHECK
+/// enforces). Total against any config the `tasks_webhook_config_check`
+/// constraint admits.
+fn storage_decoder() -> decode.Decoder(Target) {
+  use url <- decode.field("url", decode.string)
+  use method <- decode.field("method", method_decoder())
+  use headers <- decode.optional_field(
+    "headers",
+    dict.new(),
+    decode.dict(decode.string, decode.string),
+  )
+  use body <- decode.optional_field(
+    "body",
+    option.None,
+    decode.map(decode.string, option.Some),
+  )
+  decode.success(Webhook(url:, method:, headers:, body:))
+}
+
+fn kind(target: Target) -> String {
+  case target {
+    Webhook(..) -> "webhook"
+  }
+}
+
+/// Shared field set for both the response (`encode`) and the stored config
+/// (`to_storage`). No `"type"` here — `encode` prepends it, storage keeps the
+/// kind in its own column. `body` is included only when `Some`.
+fn config_fields(target: Target) -> List(#(String, json.Json)) {
+  case target {
+    Webhook(url, method, headers, body) -> {
+      let base = [
+        #("url", json.string(url)),
+        #("method", json.string(method_to_string(method))),
+        #("headers", encode_headers(headers)),
+      ]
+      case body {
+        option.Some(b) -> list.append(base, [#("body", json.string(b))])
+        option.None -> base
+      }
+    }
+  }
+}
+
+fn encode_headers(headers: Dict(String, String)) -> json.Json {
+  headers
+  |> dict.to_list
+  |> list.map(fn(pair) { #(pair.0, json.string(pair.1)) })
+  |> json.object
+}
