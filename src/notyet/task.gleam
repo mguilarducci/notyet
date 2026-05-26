@@ -2,20 +2,19 @@ import gleam/dynamic/decode
 import gleam/http.{Get, Post}
 import gleam/http/request
 import gleam/json
-import gleam/option.{Some}
 import gleam/time/duration.{type Duration}
 import gleam/time/timestamp
-import gleam/uri
 import notyet/task/batch
 import notyet/task/duration as duration_parser
 import notyet/task/record
 import notyet/task/sql
 import notyet/task/status
+import notyet/task/validate
 import notyet/task/view
 import notyet/web.{type Context}
 import pog
 import wisp.{type Request, type Response}
-import youid/uuid.{type Uuid}
+import youid/uuid
 
 const idempotency_header = "idempotency-key"
 
@@ -32,35 +31,9 @@ fn wait_for_decoder() -> decode.Decoder(#(Duration, String)) {
   }
 }
 
-/// Parse a string as a strict UUID v4. Non-UUID or non-v4 → Error.
-fn parse_uuid_v4(s: String) -> Result(Uuid, Nil) {
-  case uuid.from_string(s) {
-    Ok(u) ->
-      case uuid.version(u) == uuid.V4 {
-        True -> Ok(u)
-        False -> Error(Nil)
-      }
-    Error(_) -> Error(Nil)
-  }
-}
-
-/// Validate a destination as an http/https URL: parseable, scheme http|https,
-/// non-empty host. Stores the raw string (no normalization).
-fn parse_http_url(s: String) -> Result(String, Nil) {
-  case uri.parse(s) {
-    Error(_) -> Error(Nil)
-    Ok(parsed) ->
-      case parsed.scheme, parsed.host {
-        Some("http"), Some("") | Some("https"), Some("") -> Error(Nil)
-        Some("http"), Some(_) | Some("https"), Some(_) -> Ok(s)
-        _, _ -> Error(Nil)
-      }
-  }
-}
-
 fn destination_decoder() -> decode.Decoder(String) {
   use s <- decode.then(decode.string)
-  case parse_http_url(s) {
+  case validate.url_http(s) {
     Ok(url) -> decode.success(url)
     Error(_) -> decode.failure("", "destination must be an http(s) URL")
   }
@@ -85,7 +58,7 @@ pub fn create(req: Request, ctx: Context) -> Response {
       // The Idempotency-Key must be a UUID v4: a single, URL-safe path segment,
       // so `GET /tasks/{key}` can round-trip it. Store the canonical form so a
       // repeat with different casing still deduplicates.
-      case parse_uuid_v4(raw_key) {
+      case validate.uuid_v4(raw_key) {
         Error(_) -> wisp.unprocessable_content()
         Ok(key_uuid) -> create_with_key(req, ctx, uuid.to_string(key_uuid))
       }
@@ -133,7 +106,7 @@ pub fn read(req: Request, ctx: Context, key: String) -> Response {
   // The key is a UUID v4 (enforced on write); a non-v4 path segment cannot
   // identify any stored task. Match on the canonical form so casing differences
   // still resolve.
-  case parse_uuid_v4(key) {
+  case validate.uuid_v4(key) {
     Error(_) -> wisp.not_found()
     Ok(key_uuid) -> read_by_key(ctx, uuid.to_string(key_uuid))
   }
