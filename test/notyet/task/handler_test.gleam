@@ -134,6 +134,30 @@ pub fn read_non_v4_key_returns_404_test() {
   assert response.status == 404
 }
 
+pub fn uppercase_key_canonicalized_test() {
+  use db <- test_helper.with_db
+  let context = ctx(db)
+  // The Idempotency-Key is a v4 UUID; an uppercase form must canonicalize to
+  // the same lowercase row on both write and read (so casing still dedups).
+  let upper = "F47AC10B-58CC-4372-A567-0E02B2C3D479"
+  let created =
+    test_helper.keyed_request(
+      "{\"wait_for\":\"5 minutes\",\"destination\":\"" <> dest <> "\"}",
+      upper,
+    )
+    |> task.create(context)
+  assert created.status == 202
+  assert test_helper.eventually_count(db, 1, 2000) == 1
+  // GET with the SAME uppercase key resolves the row written under lowercase.
+  let got =
+    simulate.request(http.Get, "/tasks/" <> upper)
+    |> task.read(context, upper)
+  assert got.status == 200
+  // The stored/returned key is the canonical lowercase form.
+  assert test_helper.json_field(simulate.read_body(got), "idempotency_key")
+    == test_helper.v4
+}
+
 pub fn retry_same_key_persists_once_test() {
   use db <- test_helper.with_db
   let context = ctx(db)
