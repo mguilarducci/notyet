@@ -29,7 +29,7 @@ pub fn main() -> Nil {
     )
 
   let assert Ok(_) =
-    supervisor.new(supervisor.OneForOne)
+    supervisor.new(supervisor.RestForOne)
     |> supervisor.add(pog.supervised(db_config))
     |> supervisor.add(batch.supervised(batch_name, db, batch_config))
     |> supervisor.start
