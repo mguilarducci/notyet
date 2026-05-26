@@ -64,12 +64,18 @@ fn webhook_decoder() -> decode.Decoder(Target) {
   use url <- decode.field("url", url_decoder())
   use method <- decode.field("method", method_decoder())
   use headers <- decode.optional_field("headers", dict.new(), headers_decoder())
-  use body <- decode.optional_field(
-    "body",
-    option.None,
-    decode.map(decode.string, option.Some),
-  )
+  use body <- decode.optional_field("body", option.None, body_decoder())
   decode.success(Webhook(url:, method:, headers:, body:))
+}
+
+/// Body is opaque (sent raw to the webhook), so CR/LF/tab are allowed — but a
+/// NUL byte cannot be stored in JSONB, so reject it at the boundary.
+fn body_decoder() -> decode.Decoder(Option(String)) {
+  use s <- decode.then(decode.string)
+  case validate.no_nul(s) {
+    Ok(_) -> decode.success(option.Some(s))
+    Error(_) -> decode.failure(option.None, "body without a NUL byte")
+  }
 }
 
 fn url_decoder() -> decode.Decoder(String) {
@@ -119,14 +125,38 @@ pub fn to_storage(target: Target) -> #(String, String) {
   #(kind(target), json.to_string(json.object(config_fields(target))))
 }
 
-/// Inverse of `to_storage`. Total against rows this service wrote (the schema
-/// CHECK + the boundary decoder constrain what reaches storage).
+/// Inverse of `to_storage`. Uses a STRUCTURAL decoder (`storage_decoder`), not
+/// the write-boundary `decoder()`: it parses the shape the schema CHECK already
+/// guarantees and does NOT re-run business validation (URL syntax, header
+/// tokens). Re-validating on read would turn any CHECK-satisfying row the write
+/// boundary would have rejected into a panic via `row_to_task`'s `let assert`.
+/// Validation belongs on write; read trusts the schema.
 pub fn from_storage(kind: String, config: String) -> Result(Target, Nil) {
   case kind {
     "webhook" ->
-      json.parse(config, webhook_decoder()) |> result.replace_error(Nil)
+      json.parse(config, storage_decoder()) |> result.replace_error(Nil)
     _ -> Error(Nil)
   }
+}
+
+/// Structural read-back decoder: `url`/`headers`/`body` as plain strings (no
+/// business validation), `method` via the closed set (which the schema CHECK
+/// enforces). Total against any config the `tasks_webhook_config_check`
+/// constraint admits.
+fn storage_decoder() -> decode.Decoder(Target) {
+  use url <- decode.field("url", decode.string)
+  use method <- decode.field("method", method_decoder())
+  use headers <- decode.optional_field(
+    "headers",
+    dict.new(),
+    decode.dict(decode.string, decode.string),
+  )
+  use body <- decode.optional_field(
+    "body",
+    option.None,
+    decode.map(decode.string, option.Some),
+  )
+  decode.success(Webhook(url:, method:, headers:, body:))
 }
 
 fn kind(target: Target) -> String {

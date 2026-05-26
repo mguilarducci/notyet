@@ -32,10 +32,28 @@ fn is_token_char(c: String) -> Bool {
   string.contains(does: token_chars, contain: c)
 }
 
-/// Validate a header value: anything without CR or LF. CR/LF is the
-/// request-splitting / header-injection vector and is rejected.
+/// The NUL byte (U+0000). PostgreSQL cannot store it in a JSONB value, so any
+/// user-supplied string persisted into `target_config` must reject it at the
+/// boundary — otherwise the async insert fails and the task is silently dropped
+/// after a 202.
+const nul = "\u{0000}"
+
+/// Reject a string containing a NUL byte (see `nul`).
+pub fn no_nul(s: String) -> Result(String, Nil) {
+  case string.contains(s, nul) {
+    True -> Error(Nil)
+    False -> Ok(s)
+  }
+}
+
+/// Validate a header value: no CR, LF, or NUL. CR/LF is the request-splitting /
+/// header-injection vector; NUL cannot be stored in JSONB. Both are rejected.
 pub fn header_value(value: String) -> Result(String, Nil) {
-  case string.contains(value, "\r") || string.contains(value, "\n") {
+  case
+    string.contains(value, "\r")
+    || string.contains(value, "\n")
+    || string.contains(value, nul)
+  {
     True -> Error(Nil)
     False -> Ok(value)
   }
@@ -46,16 +64,20 @@ pub fn header_value(value: String) -> Result(String, Nil) {
 /// normalization). Userinfo is rejected so credentials never reach the stored
 /// destination or the outbound request the delivery worker later makes.
 pub fn url_http(s: String) -> Result(String, Nil) {
-  case uri.parse(s) {
-    Error(_) -> Error(Nil)
-    Ok(parsed) ->
-      case parsed.userinfo {
-        Some(_) -> Error(Nil)
-        None ->
-          case parsed.scheme, parsed.host {
-            Some("http"), Some("") | Some("https"), Some("") -> Error(Nil)
-            Some("http"), Some(_) | Some("https"), Some(_) -> Ok(s)
-            _, _ -> Error(Nil)
+  case string.contains(s, nul) {
+    True -> Error(Nil)
+    False ->
+      case uri.parse(s) {
+        Error(_) -> Error(Nil)
+        Ok(parsed) ->
+          case parsed.userinfo {
+            Some(_) -> Error(Nil)
+            None ->
+              case parsed.scheme, parsed.host {
+                Some("http"), Some("") | Some("https"), Some("") -> Error(Nil)
+                Some("http"), Some(_) | Some("https"), Some(_) -> Ok(s)
+                _, _ -> Error(Nil)
+              }
           }
       }
   }

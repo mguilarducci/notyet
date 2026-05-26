@@ -144,3 +144,27 @@ pub fn storage_roundtrip_test() {
 pub fn from_storage_unknown_kind_test() {
   assert target.from_storage("email", "{}") == Error(Nil)
 }
+
+pub fn decoder_rejects_nul_in_body_test() {
+  let json =
+    "{\"type\":\"webhook\",\"url\":\"https://x.com\",\"method\":\"POST\",\"headers\":{},\"body\":\"a\\u0000b\"}"
+  assert decode_target(json) == Error(Nil)
+}
+
+pub fn decoder_rejects_nul_in_header_value_test() {
+  let json =
+    "{\"type\":\"webhook\",\"url\":\"https://x.com\",\"method\":\"POST\",\"headers\":{\"X-A\":\"a\\u0000b\"}}"
+  assert decode_target(json) == Error(Nil)
+}
+
+// from_storage is structural: a config the write boundary would reject (here an
+// ftp url) still decodes on read, so a CHECK-satisfying row never panics
+// row_to_task's `let assert`.
+pub fn from_storage_accepts_business_invalid_url_test() {
+  let assert Ok(target.Webhook(url, _, _, _)) =
+    target.from_storage(
+      "webhook",
+      "{\"url\":\"ftp://x\",\"method\":\"POST\",\"headers\":{}}",
+    )
+  assert url == "ftp://x"
+}

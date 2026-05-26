@@ -99,3 +99,19 @@ pub fn header_value_rejects_cr_test() {
 pub fn header_value_rejects_lf_test() {
   assert result.is_error(validate.header_value("a\nb"))
 }
+
+pub fn header_value_rejects_nul_test() {
+  assert result.is_error(validate.header_value("a\u{0000}b"))
+}
+
+pub fn url_http_rejects_nul_test() {
+  assert result.is_error(validate.url_http("http://a\u{0000}b.example.com"))
+}
+
+pub fn no_nul_accepts_plain_test() {
+  assert validate.no_nul("plain value") == Ok("plain value")
+}
+
+pub fn no_nul_rejects_nul_test() {
+  assert result.is_error(validate.no_nul("a\u{0000}b"))
+}
