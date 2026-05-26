@@ -9,8 +9,8 @@ import notyet/task/duration as duration_parser
 import notyet/task/record
 import notyet/task/sql
 import notyet/task/status
+import notyet/task/validate
 import notyet/task/view
-import notyet/validate
 import notyet/web.{type Context}
 import pog
 import wisp.{type Request, type Response}

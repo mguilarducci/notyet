@@ -1,5 +1,5 @@
 import gleam/result
-import notyet/validate
+import notyet/task/validate
 
 const v4 = "f47ac10b-58cc-4372-a567-0e02b2c3d479"
 
@@ -56,4 +56,13 @@ pub fn url_http_rejects_https_empty_host_test() {
 
 pub fn url_http_rejects_garbage_test() {
   assert validate.url_http("not a url") |> result.is_error
+}
+
+pub fn url_http_rejects_userinfo_test() {
+  assert validate.url_http("http://user:pass@example.com/cb")
+    |> result.is_error
+}
+
+pub fn url_http_rejects_userinfo_user_only_test() {
+  assert validate.url_http("https://user@example.com") |> result.is_error
 }

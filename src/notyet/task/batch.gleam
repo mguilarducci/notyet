@@ -5,7 +5,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 import gleam/otp/supervision
 import gleam/string
-import notyet/clock
+import notyet/task/clock
 import notyet/task/record.{type TaskRecord}
 import notyet/task/sql
 import pog

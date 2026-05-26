@@ -1,5 +1,5 @@
 import gleam/time/timestamp
-import notyet/clock
+import notyet/task/clock
 
 // Round-trip: formatting then parsing must recover the exact instant. Mirrors
 // the existing view_unit_test approach and is robust to lib formatting details.

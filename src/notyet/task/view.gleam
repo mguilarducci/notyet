@@ -1,6 +1,6 @@
 import gleam/json
 import gleam/time/timestamp.{type Timestamp}
-import notyet/clock
+import notyet/task/clock
 import notyet/task/status.{type Status}
 import youid/uuid.{type Uuid}
 
