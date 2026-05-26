@@ -1,8 +1,11 @@
+import gleam/dict
 import gleam/erlang/process
+import gleam/option.{None}
 import gleam/otp/actor
 import gleam/time/timestamp
 import notyet/task/batch
 import notyet/task/record
+import notyet/task/target
 import pog
 import test_helper
 import youid/uuid
@@ -12,7 +15,12 @@ fn rec() -> record.TaskRecord {
     id: uuid.v4(),
     idempotency_key: uuid.v4_string(),
     wait_for: "5 minutes",
-    destination: "https://example.com/cb",
+    target: target.Webhook(
+      url: "https://example.com/cb",
+      method: target.Post,
+      headers: dict.new(),
+      body: None,
+    ),
     visible_at: timestamp.system_time(),
     wait_until: timestamp.system_time(),
     created_at: timestamp.system_time(),
