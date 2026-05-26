@@ -19,9 +19,10 @@ pub type GetTaskByIdempotencyKeyRow {
     idempotency_key: String,
     status: String,
     wait_for: String,
+    target_kind: String,
+    target_config: String,
     wait_until: String,
     created_at: String,
-    destination: String,
   )
 }
 
@@ -40,17 +41,19 @@ pub fn get_task_by_idempotency_key(
     use idempotency_key <- decode.field(1, decode.string)
     use status <- decode.field(2, decode.string)
     use wait_for <- decode.field(3, decode.string)
-    use wait_until <- decode.field(4, decode.string)
-    use created_at <- decode.field(5, decode.string)
-    use destination <- decode.field(6, decode.string)
+    use target_kind <- decode.field(4, decode.string)
+    use target_config <- decode.field(5, decode.string)
+    use wait_until <- decode.field(6, decode.string)
+    use created_at <- decode.field(7, decode.string)
     decode.success(GetTaskByIdempotencyKeyRow(
       id:,
       idempotency_key:,
       status:,
       wait_for:,
+      target_kind:,
+      target_config:,
       wait_until:,
       created_at:,
-      destination:,
     ))
   }
 
@@ -59,9 +62,10 @@ pub fn get_task_by_idempotency_key(
   idempotency_key,
   status,
   wait_for,
+  target_kind,
+  target_config::text AS target_config,
   to_char(wait_until AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') AS wait_until,
-  to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') AS created_at,
-  destination
+  to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') AS created_at
 FROM tasks
 WHERE idempotency_key = $1;
 "
@@ -86,13 +90,14 @@ pub fn insert_tasks(
   arg_5: List(String),
   arg_6: List(String),
   arg_7: List(String),
+  arg_8: List(String),
 ) -> Result(pog.Returned(Nil), pog.QueryError) {
   let decoder = decode.map(decode.dynamic, fn(_) { Nil })
 
-  "INSERT INTO tasks (id, idempotency_key, wait_for, destination, visible_at, wait_until, created_at)
-SELECT i::uuid, k, f, dest, v::timestamptz, w::timestamptz, c::timestamptz
-FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[])
-  AS t(i, k, f, dest, v, w, c)
+  "INSERT INTO tasks (id, idempotency_key, wait_for, target_kind, target_config, visible_at, wait_until, created_at)
+SELECT i::uuid, k, f, tk, tc::jsonb, v::timestamptz, w::timestamptz, c::timestamptz
+FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[])
+  AS t(i, k, f, tk, tc, v, w, c)
 ON CONFLICT (idempotency_key) DO NOTHING;
 "
   |> pog.query
@@ -103,6 +108,7 @@ ON CONFLICT (idempotency_key) DO NOTHING;
   |> pog.parameter(pog.array(fn(value) { pog.text(value) }, arg_5))
   |> pog.parameter(pog.array(fn(value) { pog.text(value) }, arg_6))
   |> pog.parameter(pog.array(fn(value) { pog.text(value) }, arg_7))
+  |> pog.parameter(pog.array(fn(value) { pog.text(value) }, arg_8))
   |> pog.returning(decoder)
   |> pog.execute(db)
 }
