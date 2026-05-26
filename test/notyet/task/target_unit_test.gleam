@@ -1,4 +1,5 @@
 import gleam/dict
+import gleam/dynamic/decode
 import gleam/json
 import gleam/option.{None, Some}
 import gleam/result
@@ -78,4 +79,60 @@ pub fn decoder_rejects_bad_header_name_test() {
 pub fn decoder_rejects_unknown_type_test() {
   let json = "{\"type\":\"smoke-signal\",\"url\":\"https://x.com\"}"
   assert decode_target(json) == Error(Nil)
+}
+
+fn sample() -> target.Target {
+  target.Webhook(
+    url: "https://x.com/cb",
+    method: target.Post,
+    headers: dict.from_list([#("X-A", "b")]),
+    body: Some("hi"),
+  )
+}
+
+fn field(body: String, key: String) -> String {
+  let assert Ok(v) =
+    json.parse(body, {
+      use s <- decode.field(key, decode.string)
+      decode.success(s)
+    })
+  v
+}
+
+pub fn encode_includes_type_and_fields_test() {
+  let body = json.to_string(target.encode(sample()))
+  assert field(body, "type") == "webhook"
+  assert field(body, "url") == "https://x.com/cb"
+  assert field(body, "method") == "POST"
+}
+
+pub fn encode_omits_body_when_none_test() {
+  let no_body = target.Webhook(..sample(), body: None)
+  let body = json.to_string(target.encode(no_body))
+  let parsed =
+    json.parse(body, {
+      use b <- decode.field("body", decode.optional(decode.string))
+      decode.success(b)
+    })
+  assert parsed == Ok(None)
+}
+
+pub fn to_storage_kind_and_config_test() {
+  let #(kind, config) = target.to_storage(sample())
+  assert kind == "webhook"
+  let has_type =
+    json.parse(config, {
+      use t <- decode.field("type", decode.optional(decode.string))
+      decode.success(t)
+    })
+  assert has_type == Ok(None)
+}
+
+pub fn storage_roundtrip_test() {
+  let #(kind, config) = target.to_storage(sample())
+  assert target.from_storage(kind, config) == Ok(sample())
+}
+
+pub fn from_storage_unknown_kind_test() {
+  assert target.from_storage("email", "{}") == Error(Nil)
 }

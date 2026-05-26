@@ -1,5 +1,6 @@
 import gleam/dict.{type Dict}
 import gleam/dynamic/decode
+import gleam/json
 import gleam/list
 import gleam/option.{type Option}
 import gleam/result
@@ -104,4 +105,68 @@ fn valid_header(pair: #(String, String)) -> Bool {
 /// (a failure decoder discards it).
 fn placeholder() -> Target {
   Webhook("", Get, dict.new(), option.None)
+}
+
+/// Serialize a `Target` to its `GET` response object (includes `"type"`).
+pub fn encode(target: Target) -> json.Json {
+  case target {
+    Webhook(url, method, headers, body) ->
+      json.object([
+        #("type", json.string("webhook")),
+        #("url", json.string(url)),
+        #("method", json.string(method_to_string(method))),
+        #("headers", encode_headers(headers)),
+        #("body", case body {
+          option.Some(b) -> json.string(b)
+          option.None -> json.null()
+        }),
+      ])
+  }
+}
+
+/// Storage form: `#(kind, config_json)`. `config` is the variant payload as a
+/// JSON string (no `"type"` — the kind lives in its own column).
+pub fn to_storage(target: Target) -> #(String, String) {
+  #(kind(target), json.to_string(storage_config(target)))
+}
+
+/// Inverse of `to_storage`. Total against rows this service wrote (the schema
+/// CHECK + the boundary decoder constrain what reaches storage).
+pub fn from_storage(kind: String, config: String) -> Result(Target, Nil) {
+  case kind {
+    "webhook" ->
+      json.parse(config, webhook_decoder()) |> result.replace_error(Nil)
+    _ -> Error(Nil)
+  }
+}
+
+fn kind(target: Target) -> String {
+  case target {
+    Webhook(..) -> "webhook"
+  }
+}
+
+fn storage_config(target: Target) -> json.Json {
+  case target {
+    Webhook(url, method, headers, body) -> {
+      let base = [
+        #("type", json.null()),
+        #("url", json.string(url)),
+        #("method", json.string(method_to_string(method))),
+        #("headers", encode_headers(headers)),
+      ]
+      case body {
+        option.Some(b) -> list.append(base, [#("body", json.string(b))])
+        option.None -> base
+      }
+      |> json.object
+    }
+  }
+}
+
+fn encode_headers(headers: Dict(String, String)) -> json.Json {
+  headers
+  |> dict.to_list
+  |> list.map(fn(pair) { #(pair.0, json.string(pair.1)) })
+  |> json.object
 }
